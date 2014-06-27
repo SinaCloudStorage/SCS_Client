@@ -1,0 +1,11 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+	<file alias="info.png">images/info.png</file>
+	<file alias="newfolder.png">images/newfolder.png</file>
+	<file alias="queue.png">images/queue.png</file>
+	<file alias="reload.png">images/reload.png</file>
+	<file alias="upload.png">images/upload.png</file>
+	<file alias="folder_icon.png">images/folder.png</file>
+	<file alias="file_icon.png">images/notfound.png</file>
+</qresource>
+</RCC>
