@@ -1221,13 +1221,13 @@ class FileTableCellItem(QtGui.QTableWidgetItem) :
         sortColumnNo = self.openner.horizontalHeader().sortIndicatorSection()
         sortOrder = self.openner.horizontalHeader().sortIndicatorOrder()
         
-        str1 = u'%s'%self.text()
-        str2 = u'%s'%other.text()
+#         str1 = u'%s'%self.text()
+#         str2 = u'%s'%other.text()
         
         fileName1 = u'%s'%self.openner.item(self.row(), 0).text()
         fileName2 = u'%s'%self.openner.item(other.row(), 0).text()
         
-        print '=====__lt__=======',fileName1,'   ',fileName2
+#         print '=====__lt__=======',fileName1,'   ',fileName2
         
 #         if sortColumnNo == 0:
         if sortOrder == 0:#QtCore.Qt.SortOrder.AscendingOrder:
