@@ -19,3 +19,24 @@ def filesizeformat(bytes, precision=2):
                        ['Bytes', 'KB', 'MB', 'GB', 'TB','PB', 'EB', 'ZB', 'YB']
                        [int(log)]
                        )
+    
+
+def bytesFromFilesizeFormat(filesize):
+    if filesize is None or len(filesize)==0:
+        return 0
+    
+    try:
+        formatArray = ['Bytes', 'KB', 'MB', 'GB', 'TB','PB', 'EB', 'ZB', 'YB']
+        
+        if filesize.find('Bytes') == -1:
+            format = filesize[len(filesize)-2:]
+            idx = formatArray.index(format)
+            size = float(filesize[0:len(filesize)-3])
+            for i in xrange(idx):
+                size = size * 1024
+                
+            return size
+        else:
+            return float(filesize[0:len(filesize)-6])
+    except Exception , e:
+        return 0

@@ -18,7 +18,7 @@ import sinastorage
 from sinastorage.bucket import SCSBucket,ACL, SCSError, KeyNotFound, BadRequest, SCSResponse
 from sinastorage.utils import rfc822_fmtdate, rfc822_parsedate
 
-from Utils import filesizeformat
+from Utils import filesizeformat, bytesFromFilesizeFormat
 
 from Runnables import (FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
@@ -1221,9 +1221,6 @@ class FileTableCellItem(QtGui.QTableWidgetItem) :
         sortColumnNo = self.openner.horizontalHeader().sortIndicatorSection()
         sortOrder = self.openner.horizontalHeader().sortIndicatorOrder()
         
-#         str1 = u'%s'%self.text()
-#         str2 = u'%s'%other.text()
-        
         fileName1 = u'%s'%self.openner.item(self.row(), 0).text()
         fileName2 = u'%s'%self.openner.item(other.row(), 0).text()
         
@@ -1235,18 +1232,20 @@ class FileTableCellItem(QtGui.QTableWidgetItem) :
                 return True
             elif cmp(fileName2,'..') == 0:
                 return False
-            else:
-                return self.text() < other.text()
         else:
             if cmp(fileName1,'..') == 0:
                 return False
             elif cmp(fileName2,'..') == 0:
                 return True
-            else:
-                return self.text() < other.text()
-#         else:
             
+        if sortColumnNo == 4: #file size
+            str1 = u'%s'%self.text()
+            str2 = u'%s'%other.text()
             
+            return bytesFromFilesizeFormat(str1) < bytesFromFilesizeFormat(str2)
+            
+        else:    
+            return self.text() < other.text()
             
             
             
