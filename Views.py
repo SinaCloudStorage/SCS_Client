@@ -55,7 +55,11 @@ class OperationLogDetail(QtGui.QDialog):
         self.requestBodyTextEdit = QtGui.QTextEdit()
         self.requestBodyTextEdit.setReadOnly(True)
         self.requestBodyTextEdit.setLineWrapMode(QtGui.QTextEdit.NoWrap)
-        self.requestBodyTextEdit.setText(self.scsResponse.urllib2Request.data if self.scsResponse.urllib2Request.data is not None else '<request is empty!>')
+        
+        if hasattr(self.scsResponse.urllib2Request.data,'fileno'): #file like
+            self.requestBodyTextEdit.setText('<file data. %s>'%self.scsResponse.urllib2Request.data.name)
+        else:
+            self.requestBodyTextEdit.setText(self.scsResponse.urllib2Request.data if self.scsResponse.urllib2Request.data is not None else '<request is empty!>')
         
         rowIdx = 0
         layout = QtGui.QGridLayout()
@@ -985,10 +989,11 @@ class FilesTable(QtGui.QTableWidget):
                     u"请选择保存路径",
                     '', options)
             
-            downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, '%s%s'%(self.currentPrefix,fileName), u'%s/%s'%(directory,os.path.basename(fileName)))
-            QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable()'),self.refreshTableList)
-            QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),self.downloadFileUpdateProgress)
-            self.openner.startOperationRunnable(downloadObjectRunnable)
+            if len(directory) > 0:
+                downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, '%s%s'%(self.currentPrefix,fileName), u'%s/%s'%(directory,os.path.basename(fileName)))
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable()'),self.refreshTableList)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),self.downloadFileUpdateProgress)
+                self.openner.startOperationRunnable(downloadObjectRunnable)
             
     def downloadFileUpdateProgress(self, thread, total, received):
         ''' 更新下载进度 '''
@@ -1040,6 +1045,7 @@ class FilesTable(QtGui.QTableWidget):
         menu = QtGui.QMenu(self)
         
         if len(rowSet) == 1:#单选
+            fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
             ''' 下载 '''
             downloadFileAct = QtGui.QAction(u"&下载文件", self,
                 shortcut="Ctrl+D",
@@ -1052,11 +1058,12 @@ class FilesTable(QtGui.QTableWidget):
                 triggered=self.fileInfoAction)
             menu.addAction(fileInfoAct)
             
-            fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
             if fileName.find('/') == len(fileName)-1 :
                 fileInfoAct.setEnabled(False) 
+                downloadFileAct.setEnabled(False)
             else:
                 fileInfoAct.setEnabled(True) 
+                downloadFileAct.setEnabled(True)
             
             menu.addSeparator()
             ''' 删除 '''
