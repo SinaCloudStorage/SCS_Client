@@ -52,7 +52,6 @@ class MainWindow(QtGui.QMainWindow):
     def closeEvent(self, event):
         ''' 关闭事件 '''
 #         if self.maybeSave():
-#             self.writeSettings()
 #             event.accept()
 #         else:
 #             event.ignore()
@@ -114,7 +113,6 @@ class MainWindow(QtGui.QMainWindow):
         self.central_widget = QtGui.QStackedWidget()
         self.setCentralWidget(self.central_widget)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        self.isUntitled = True
 
         self.filesTable = None
 
@@ -201,54 +199,6 @@ class MainWindow(QtGui.QMainWindow):
         self.move(pos)
         self.resize(size)
 
-    def writeSettings(self):
-        settings = QtCore.QSettings('Trolltech', 'SDI Example')
-        settings.setValue('pos', self.pos())
-        settings.setValue('size', self.size())
-
-    def loadFile(self, fileName):
-        file = QtCore.QFile(fileName)
-        if not file.open( QtCore.QFile.ReadOnly | QtCore.QFile.Text):
-            QtGui.QMessageBox.warning(self, "SDI",
-                    "Cannot read file %s:\n%s." % (fileName, file.errorString()))
-            return
-
-        instr = QtCore.QTextStream(file)
-        QtGui.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-        self.textEdit.setPlainText(instr.readAll())
-        QtGui.QApplication.restoreOverrideCursor()
-
-        self.setCurrentFile(fileName)
-        self.statusBar().showMessage("File loaded", 2000)
-
-    def saveFile(self, fileName):
-        file = QtCore.QFile(fileName)
-        if not file.open( QtCore.QFile.WriteOnly | QtCore.QFile.Text):
-            QtGui.QMessageBox.warning(self, "SDI",
-                    "Cannot write file %s:\n%s." % (fileName, file.errorString()))
-            return False
-
-        outstr = QtCore.QTextStream(file)
-        QtGui.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-        outstr << self.textEdit.toPlainText()
-        QtGui.QApplication.restoreOverrideCursor()
-
-        self.setCurrentFile(fileName)
-        self.statusBar().showMessage("File saved", 2000)
-        return True
-
-    def setCurrentFile(self, fileName):
-        self.isUntitled = not fileName
-        if self.isUntitled:
-            self.curFile = "document%d.txt" % MainWindow.sequenceNumber
-            MainWindow.sequenceNumber += 1
-        else:
-            self.curFile = QtCore.QFileInfo(fileName).canonicalFilePath()
-
-        self.textEdit.document().setModified(False)
-        self.setWindowModified(False)
-
-        self.setWindowTitle("%s[*] - SDI" % self.strippedName(self.curFile))
 
     def strippedName(self, fullFileName):
         return QtCore.QFileInfo(fullFileName).fileName()

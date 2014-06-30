@@ -4,3 +4,10 @@
 .pydevproject
 
 .settings/
+.project
+
+*.prefs
+
+Views.pyc
+
+*.pyc

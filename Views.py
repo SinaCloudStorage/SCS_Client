@@ -18,6 +18,8 @@ import sinastorage
 from sinastorage.bucket import SCSBucket,ACL, SCSError, KeyNotFound, BadRequest, SCSResponse
 from sinastorage.utils import rfc822_fmtdate, rfc822_parsedate
 
+from Utils import filesizeformat
+
 from Runnables import (FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
                        DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
@@ -910,6 +912,8 @@ class FilesTable(QtGui.QTableWidget):
         self.currentBucketName = ''
         self.currentPrefix = ''
         
+        self.setSortingEnabled(False)
+        
         self.openner = openner
         self.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
         self.setHorizontalHeaderLabels((u"文件名称", u"SHA1", u"修改日期", u"MD5", u"文件大小"))
@@ -1005,7 +1009,6 @@ class FilesTable(QtGui.QTableWidget):
     def fileInfoAction(self,event):
         ''' 文件列表右键contextMenu-file info action '''
         fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()#unicode(self.item(self.selectedIndexes()[0].row(), 0).text(),'utf-8','ignore')
-        print '---------',fileName
         
         fileInfoDialog = FileInfoDialog(self, self.currentBucketName, fileName, self.currentPrefix)
         fileInfoDialog.exec_()
@@ -1049,6 +1052,12 @@ class FilesTable(QtGui.QTableWidget):
                 triggered=self.fileInfoAction)
             menu.addAction(fileInfoAct)
             
+            fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
+            if fileName.find('/') == len(fileName)-1 :
+                fileInfoAct.setEnabled(False) 
+            else:
+                fileInfoAct.setEnabled(True) 
+            
             menu.addSeparator()
             ''' 删除 '''
             delAct = QtGui.QAction(u"删除文件", self,
@@ -1071,7 +1080,12 @@ class FilesTable(QtGui.QTableWidget):
 
     def enableToolBarButton(self):
         if len(self.selectedItems()) > 0 and self.selectedIndexes()[0].row() != 0:
-            self.openner.objectInfoAct.setEnabled(True)
+            fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
+            if fileName.find('/') == len(fileName)-1 :
+                self.openner.objectInfoAct.setEnabled(False) 
+            else:
+                self.openner.objectInfoAct.setEnabled(True) 
+            
         else:
             self.openner.objectInfoAct.setEnabled(False)
 
@@ -1085,6 +1099,7 @@ class FilesTable(QtGui.QTableWidget):
                 self.openner.central_widget.removeWidget(self)
                 self.openner.uploadAct.setEnabled(False)
                 self.openner.objectInfoAct.setEnabled(False)
+                self.openner.setWindowTitle('')
                 
                 return
             else:
@@ -1117,6 +1132,7 @@ class FilesTable(QtGui.QTableWidget):
         
         
     def showFilesOfBucket(self, runnable):#bucketName, prefix=None, marker=None, limit=None, delimiter='/'):
+        self.setSortingEnabled(False)
         files_generator = runnable.files_generator
         
         self.currentBucketName = runnable.bucketName
@@ -1125,12 +1141,12 @@ class FilesTable(QtGui.QTableWidget):
         self.setRowCount(0)
         
         ''' 添加返回上级row '''
-        fileNameItem = QtGui.QTableWidgetItem('..')  #name
+        fileNameItem = FileTableCellItem('..', self)  #name
         fileNameItem.setIcon(QtGui.QIcon(':/folder_icon.png'))
-        sha1Item = QtGui.QTableWidgetItem('--')  #sha1
-        modifyItem = QtGui.QTableWidgetItem('--')  #modify
-        md5Item = QtGui.QTableWidgetItem('--')  #md5
-        sizeItem = QtGui.QTableWidgetItem('--')  #size
+        sha1Item = FileTableCellItem('--', self)  #sha1
+        modifyItem = FileTableCellItem('--', self)  #modify
+        md5Item = FileTableCellItem('--', self)  #md5
+        sizeItem = FileTableCellItem('--', self)  #size
         fileNameItem.setFlags(fileNameItem.flags() & ~QtCore.Qt.ItemIsEditable)
         sha1Item.setFlags(sha1Item.flags() & ~QtCore.Qt.ItemIsEditable)
         modifyItem.setFlags(modifyItem.flags() & ~QtCore.Qt.ItemIsEditable)
@@ -1156,24 +1172,24 @@ class FilesTable(QtGui.QTableWidget):
             if fileNameStr.find(self.currentPrefix) == 0 :
                 fileNameStr = fileNameStr[len(self.currentPrefix):]
             
-            fileNameItem = QtGui.QTableWidgetItem(fileNameStr)  #name
+            fileNameItem = FileTableCellItem(fileNameStr, self)  #name
             isPrefix = item[1]
             if isPrefix is not True:
                 fileNameItem.setIcon(QtGui.QIcon(':/file_icon.png'))
-                sha1Item = QtGui.QTableWidgetItem(item[2])  #sha1
+                sha1Item = FileTableCellItem(item[2], self)  #sha1
 #                 expiration_time = item[3]
                 ''' time zone!!! '''
-                modifyItem = QtGui.QTableWidgetItem(item[4].strftime('%Y-%m-%d %H:%M:%S'))  #modify
+                modifyItem = FileTableCellItem(item[4].strftime('%Y-%m-%d %H:%M:%S'), self)  #modify
 #                 owner = item[5]
-                md5Item = QtGui.QTableWidgetItem(item[6])  #md5
+                md5Item = FileTableCellItem(item[6], self)  #md5
 #                 content_type = item[7]
-                sizeItem = QtGui.QTableWidgetItem("%d KB" % (int((item[8] + 1023) / 1024)))  #size
+                sizeItem = FileTableCellItem(filesizeformat(item[8]), self)  #size "%d KB" % (int((item[8] + 1023) / 1024))
             else:
                 fileNameItem.setIcon(QtGui.QIcon(':/folder_icon.png'))
-                sha1Item = QtGui.QTableWidgetItem('--')  #sha1
-                modifyItem = QtGui.QTableWidgetItem('--')  #modify
-                md5Item = QtGui.QTableWidgetItem('--')  #md5
-                sizeItem = QtGui.QTableWidgetItem('--')  #size
+                sha1Item = FileTableCellItem('--', self)  #sha1
+                modifyItem = FileTableCellItem('--', self)  #modify
+                md5Item = FileTableCellItem('--', self)  #md5
+                sizeItem = FileTableCellItem('--', self)  #size
     
             fileNameItem.setFlags(fileNameItem.flags() & ~QtCore.Qt.ItemIsEditable)
             sha1Item.setFlags(sha1Item.flags() & ~QtCore.Qt.ItemIsEditable)
@@ -1188,3 +1204,50 @@ class FilesTable(QtGui.QTableWidget):
             self.setItem(row, 2, modifyItem)
             self.setItem(row, 3, md5Item)
             self.setItem(row, 4, sizeItem)
+        
+        self.openner.setWindowTitle('%s/%s'%(self.currentBucketName,self.currentPrefix))
+        self.setSortingEnabled(True)
+        
+class FileTableCellItem(QtGui.QTableWidgetItem) :
+    def __init__(self, text, openner, type = QtGui.QTableWidgetItem.Type):
+        super(FileTableCellItem, self).__init__(text, type)
+        self.openner = openner
+
+    def __ge__(self, other):
+#         print '====__ge__========',self.text() >= other.text()
+        return self.text() >= other.text()
+        
+    def __lt__(self, other):
+        sortColumnNo = self.openner.horizontalHeader().sortIndicatorSection()
+        sortOrder = self.openner.horizontalHeader().sortIndicatorOrder()
+        
+        str1 = u'%s'%self.text()
+        str2 = u'%s'%other.text()
+        
+        fileName1 = u'%s'%self.openner.item(self.row(), 0).text()
+        fileName2 = u'%s'%self.openner.item(other.row(), 0).text()
+        
+        print '=====__lt__=======',fileName1,'   ',fileName2
+        
+#         if sortColumnNo == 0:
+        if sortOrder == 0:#QtCore.Qt.SortOrder.AscendingOrder:
+            if cmp(fileName1,'..') == 0:
+                return True
+            elif cmp(fileName2,'..') == 0:
+                return False
+            else:
+                return self.text() < other.text()
+        else:
+            if cmp(fileName1,'..') == 0:
+                return False
+            elif cmp(fileName2,'..') == 0:
+                return True
+            else:
+                return self.text() < other.text()
+#         else:
+            
+            
+            
+            
+            
+        
