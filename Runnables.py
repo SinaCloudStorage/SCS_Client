@@ -181,8 +181,10 @@ class DeleteObjectRunnable(QtCore.QRunnable):
                 files_generator = SCSListing.parse(response)
                 
                 if files_generator.contents_quantity > 0 or files_generator.common_prefixes_quantity > 0 :
-                    self.emitter.emit(QtCore.SIGNAL("DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)"), self, u'不能删除非空目录(前缀) ')
-                    return
+                    for item in files_generator:
+                        if cmp(item[0],self.key) != 0:
+                            self.emitter.emit(QtCore.SIGNAL("DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)"), self, u'不能删除非空目录(前缀) ')
+                            return
             
 #             s = SCSBucket(self.bucketName)
             self.response = s.send(s.request(method="DELETE", key=self.key))
