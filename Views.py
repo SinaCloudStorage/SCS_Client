@@ -1155,21 +1155,28 @@ class FilesTable(QtGui.QTableWidget):
 
     def delMultiObjectAction(self, event):
         ''' 批量删除文件 '''
-        rows=[]
-        for idx in self.selectedIndexes():
-            rows.append(idx.row()) 
-        rowSet = set(rows)
-        self.toBeDeleteObjectsArray  = []
-        for rowNum in rowSet:
-            fileName = u'%s'%self.item(rowNum, 0).text()
-            self.toBeDeleteObjectsArray.append('%s%s'%(self.currentPrefix,fileName))
-            
-        for path in self.toBeDeleteObjectsArray :
-            deleteObjectRunnable = DeleteObjectRunnable(self.currentBucketName,path)
-            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable(PyQt_PyObject)'),self.deleteMultiObjectDidFinished)
-            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteMultiObjectDidFailed)
-            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteMultiObjectForbidden)
-            self.openner.startOperationRunnable(deleteObjectRunnable)
+        msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning,
+                u"删除Object", 
+                u'<p>您确定删除当前选中的Object么？</p>',
+                QtGui.QMessageBox.NoButton, self)
+        msgBox.addButton(u"继续", QtGui.QMessageBox.AcceptRole)
+        msgBox.addButton(u"取消", QtGui.QMessageBox.RejectRole)
+        if msgBox.exec_() == QtGui.QMessageBox.AcceptRole:
+            rows=[]
+            for idx in self.selectedIndexes():
+                rows.append(idx.row()) 
+            rowSet = set(rows)
+            self.toBeDeleteObjectsArray  = []
+            for rowNum in rowSet:
+                fileName = u'%s'%self.item(rowNum, 0).text()
+                self.toBeDeleteObjectsArray.append('%s%s'%(self.currentPrefix,fileName))
+                
+            for path in self.toBeDeleteObjectsArray :
+                deleteObjectRunnable = DeleteObjectRunnable(self.currentBucketName,path)
+                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable(PyQt_PyObject)'),self.deleteMultiObjectDidFinished)
+                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteMultiObjectDidFailed)
+                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteMultiObjectForbidden)
+                self.openner.startOperationRunnable(deleteObjectRunnable)
         
     def deleteMultiObjectDidFinished(self, runnable):
         if runnable.key in self.toBeDeleteObjectsArray:
@@ -1208,22 +1215,29 @@ class FilesTable(QtGui.QTableWidget):
 
     def delAction(self, event):
         ''' 文件列表右键contextMenu-删除文件 action '''
-        rows=[]
-        for idx in self.selectedIndexes():
-            rows.append(idx.row()) 
-        rowSet = set(rows)
-        
-        for rowNum in rowSet:
-            fileName = u'%s'%self.item(rowNum, 0).text()
-            deleteObjectRunnable = DeleteObjectRunnable(self.currentBucketName,'%s%s'%(self.currentPrefix,fileName))
-            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable(PyQt_PyObject)'),self.deleteObjectDidFinished)
-            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectDidFailed)
-            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectForbidden)
-            self.openner.startOperationRunnable(deleteObjectRunnable)
+        msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning,
+                u"删除Object", 
+                u'<p>您确定删除当前Object么？</p>',
+                QtGui.QMessageBox.NoButton, self)
+        msgBox.addButton(u"继续", QtGui.QMessageBox.AcceptRole)
+        msgBox.addButton(u"取消", QtGui.QMessageBox.RejectRole)
+        if msgBox.exec_() == QtGui.QMessageBox.AcceptRole:
+            rows=[]
+            for idx in self.selectedIndexes():
+                rows.append(idx.row()) 
+            rowSet = set(rows)
             
-            self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
-                                                           'result':u'处理中',
-                                                           'thread':deleteObjectRunnable})
+            for rowNum in rowSet:
+                fileName = u'%s'%self.item(rowNum, 0).text()
+                deleteObjectRunnable = DeleteObjectRunnable(self.currentBucketName,'%s%s'%(self.currentPrefix,fileName))
+                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable(PyQt_PyObject)'),self.deleteObjectDidFinished)
+                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectDidFailed)
+                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectForbidden)
+                self.openner.startOperationRunnable(deleteObjectRunnable)
+                
+                self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                               'result':u'处理中',
+                                                               'thread':deleteObjectRunnable})
     
     def deleteObjectForbidden(self, runnable, errorMsg):
         self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
