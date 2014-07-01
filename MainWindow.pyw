@@ -34,9 +34,12 @@ USE_SECURE_CONNECTION = False
 
 import resource
 
+
+
 class MainWindow(QtGui.QMainWindow):
     sequenceNumber = 1
     windowList = []
+    USE_HTTPS_CONNECTION = False
 
     def __init__(self, fileName=None):
         super(MainWindow, self).__init__()
@@ -102,8 +105,11 @@ class MainWindow(QtGui.QMainWindow):
         if self.operationLogTable is None:
             self.operationLogTable = OperationLogTable(self)
 
-        self.operationLogTable.move(self.x() + self.width() + 5, self.y())
-        self.operationLogTable.show()
+        if self.operationLogTable.isVisible():
+            self.operationLogTable.setHidden(True)
+        else:
+            self.operationLogTable.move(self.x() + self.width() + 5, self.y())
+            self.operationLogTable.show()
 
     def about(self):
         QtGui.QMessageBox.about(self, "SCS client",
@@ -244,18 +250,22 @@ class MainWindow(QtGui.QMainWindow):
         USER_ACCESS_SECRET = u'%s'%self.loginWindow.accessSecretEdit.text()#unicode(self.loginWindow.accessSecretEdit.text(),'utf-8','ignore')
 
         print USER_ACCESS_KEY+'    '+USER_ACCESS_SECRET+('      %i'%USE_SECURE_CONNECTION)
-        sinastorage.setDefaultAppInfo(USER_ACCESS_KEY, USER_ACCESS_SECRET)
+        sinastorage.setDefaultAppInfo(USER_ACCESS_KEY, USER_ACCESS_SECRET, True if USE_SECURE_CONNECTION == 1 else False)
         
         listBucketRunnable = ListBucketRunnable(self)
         QtCore.QObject.connect(listBucketRunnable.emitter,QtCore.SIGNAL('ListBucketRunnable(PyQt_PyObject)'),self.loginDidFinished)
-        QtCore.QObject.connect(listBucketRunnable.emitter,QtCore.SIGNAL('ListBucketRunnableDidFailed(PyQt_PyObject)'),self.loginDidFailed)
+        QtCore.QObject.connect(listBucketRunnable.emitter,QtCore.SIGNAL('ListBucketRunnableDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.loginDidFailed)
         self.startOperationRunnable(listBucketRunnable)
         
         self.operationLogTable.updateLogDict({'operation':'list bucket', 
-                                                   'result':u'完成',
+                                                   'result':u'处理中',
                                                    'thread':listBucketRunnable})
         
     def loginDidFinished(self, runnable):
+        self.operationLogTable.updateLogDict({'operation':'list bucket', 
+                                                   'result':u'完成',
+                                                   'thread':runnable})
+        
         self.central_widget.addWidget(self.bucketsTable)
         self.showBuckets(runnable.bucketIter())
         self.central_widget.removeWidget(self.loginWindow)
@@ -263,7 +273,10 @@ class MainWindow(QtGui.QMainWindow):
         self.reloadAct.setEnabled(True)
         self.newfolderAct.setEnabled(True)
         
-    def loginDidFailed(self, runnable):
+    def loginDidFailed(self, runnable, errorMsg):
+        self.operationLogTable.updateLogDict({'operation':'list bucket', 
+                                                   'result':u'失败',
+                                                   'thread':runnable})
         reply = QtGui.QMessageBox.information(self,
                 u"登录失败", 
                 u'<p>登录失败</p><p>请检查Access Key和Access Secrect是否正确</p>')

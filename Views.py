@@ -25,6 +25,8 @@ from Runnables import (FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnab
                        DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
                        CreateFolderRunnable, CreateBucketRunnable)
 
+global USE_HTTPS_CONNECTION
+
 class OperationLogDetail(QtGui.QDialog):
     ''' 操作详细页面 '''
     def __init__(self, scsResponse, parent=None):
@@ -46,6 +48,7 @@ class OperationLogDetail(QtGui.QDialog):
         self.requestGroupBox = QtGui.QGroupBox(u"请求")
         urlNameLabel = QtGui.QLabel(u"请求地址:")
         urlLabel = QtGui.QLabel(self.scsResponse.urllib2Request.get_full_url())
+        urlLabel.setWordWrap(True)
         methodNameLabel = QtGui.QLabel(u"请求方式:")
         methodLabel = QtGui.QLabel(self.scsResponse.urllib2Request.get_method())
         
@@ -54,6 +57,8 @@ class OperationLogDetail(QtGui.QDialog):
         requestBodyNameLabel = QtGui.QLabel(u"<b>请求body:</b>")
         self.requestBodyTextEdit = QtGui.QTextEdit()
         self.requestBodyTextEdit.setReadOnly(True)
+        self.requestBodyTextEdit.setMaximumHeight(50)
+        self.requestBodyTextEdit.setMinimumHeight(50)
         self.requestBodyTextEdit.setLineWrapMode(QtGui.QTextEdit.NoWrap)
         
         if hasattr(self.scsResponse.urllib2Request.data,'fileno'): #file like
@@ -86,10 +91,19 @@ class OperationLogDetail(QtGui.QDialog):
     def initRsponseLayout(self):    
         ''' 初始化响应layout '''
         self.responseGroupBox = QtGui.QGroupBox(u"响应")
+        responseCodeNameLabel = QtGui.QLabel(u"<b>响应码:</b>")
+        responseCodeLabel = QtGui.QLabel()
+        if self.scsResponse.urllib2Response.code >= 200 and self.scsResponse.urllib2Response.code <= 300:
+            responseCode = '%d'%self.scsResponse.urllib2Response.code
+        else:
+            responseCode = '<font color=red>%d</font>'%self.scsResponse.urllib2Response.code
+        responseCodeLabel.setText(responseCode)
         responseHeaderNameLabel = QtGui.QLabel(u"<b>响应header:</b>")
         responseBodyNameLabel = QtGui.QLabel(u"<b>响应body:</b>")
         self.responseBodyTextEdit = QtGui.QTextEdit()
         self.responseBodyTextEdit.setReadOnly(True)
+        self.responseBodyTextEdit.setMaximumHeight(50)
+        self.responseBodyTextEdit.setMinimumHeight(50)
         self.responseBodyTextEdit.setLineWrapMode(QtGui.QTextEdit.NoWrap)
         
         if self.scsResponse.responseBody is not None:
@@ -99,8 +113,10 @@ class OperationLogDetail(QtGui.QDialog):
         self.responseBodyTextEdit.setText( body )
         
         layout = QtGui.QGridLayout()
-        layout.addWidget(responseHeaderNameLabel, 0, 0)
-        rowIdx = 1
+        layout.addWidget(responseCodeNameLabel, 0, 0)
+        layout.addWidget(responseCodeLabel, 0, 1)
+        layout.addWidget(responseHeaderNameLabel, 1, 0)
+        rowIdx = 2
         headers = dict(self.scsResponse.urllib2Response.info())
         for k, v in headers.iteritems() :
             layout.addWidget(QtGui.QLabel(k), rowIdx, 0)
@@ -160,8 +176,12 @@ class OperationLogTable(QtGui.QTableWidget):
         operDict = OperationLogTable.logArray[row]
         operRunnable = operDict['thread'];
         
-        self.operationLogDetail = OperationLogDetail(operRunnable.response, self)
-        self.operationLogDetail.show()
+        if hasattr(operRunnable,'response') :
+            self.operationLogDetail = OperationLogDetail(operRunnable.response, self)
+            self.operationLogDetail.show()
+        else:
+            #TODO:提示稍后
+            pass
         
     def updateLogDict(self, logDict):
         ''' 更新操作日志 
@@ -350,7 +370,15 @@ class BucketInfoDialog(QtGui.QDialog):
         mainLayout.addWidget(self.aclUserTable,15,0,1,2)
         
         ''' button '''
-        self.buttonBox = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
+        self.buttonBox = QtGui.QDialogButtonBox()
+        self.acceptBtn = QtGui.QPushButton("确认")
+        self.acceptBtn.setEnabled(False)
+        self.buttonBox.addButton(self.acceptBtn, QtGui.QDialogButtonBox.AcceptRole)
+        
+        self.cancelBtn = QtGui.QPushButton("取消")
+        self.cancelBtn.setEnabled(True)
+        self.buttonBox.addButton(self.cancelBtn, QtGui.QDialogButtonBox.RejectRole)
+        
         self.buttonBox.accepted.connect(self.updateAcl)
         self.buttonBox.rejected.connect(self.reject)
         
@@ -365,7 +393,20 @@ class BucketInfoDialog(QtGui.QDialog):
     def refreshViews(self):
         bucketInfoRunnable = BucketInfoRunnable(self.bucketName, self)
         QtCore.QObject.connect(bucketInfoRunnable.emitter,QtCore.SIGNAL('BucketInfoRunnable(PyQt_PyObject, PyQt_PyObject)'),self.setupView)
+        QtCore.QObject.connect(bucketInfoRunnable.emitter,QtCore.SIGNAL('BucketInfoDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.bucketInfoDidFailed)
         self.openner.openner.startOperationRunnable(bucketInfoRunnable)
+        
+        self.openner.openner.operationLogTable.updateLogDict({'operation':'get bucket info', 
+                                                   'result':u'处理中',
+                                                   'thread':bucketInfoRunnable})
+        
+    def bucketInfoDidFailed(self, runnable, errorMsg):
+        self.openner.openner.operationLogTable.updateLogDict({'operation':'get bucket info', 
+                                                   'result':u'失败',
+                                                   'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"获取bucket信息失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
         
     def setupView(self, runnable, metaResult):
         ''' 接口返回数据后，更新界面 '''
@@ -461,7 +502,9 @@ u'RelaxUpload': True,
                 if 'write_acp' in value:
                     self.aclUserTable.item(row, 4).setCheckState(QtCore.Qt.Checked)
             
-    
+        self.acceptBtn.setEnabled(True)
+        
+        
     def updateAcl(self):
         acl = {}
         
@@ -520,15 +563,21 @@ u'RelaxUpload': True,
                 acl[k] = v
         
         updateFileACLRunnable = UpdateFileACLRunnable(self.bucketName, None, acl)
-#         QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.setupFileInfoView)
+        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.updateFileACLDidFinished)
         self.openner.openner.startOperationRunnable(updateFileACLRunnable)
         ''' add oper log'''
         self.openner.openner.operationLogTable.updateLogDict({'operation':'update bucket acl', 
-                                                    'result':u'完成',
+                                                    'result':u'处理中',
                                                     'thread':updateFileACLRunnable})
         
         self.accept()
     
+    def updateFileACLDidFinished(self, runnable):
+        ''' add oper log'''
+        self.openner.openner.operationLogTable.updateLogDict({'operation':'update bucket acl', 
+                                                    'result':u'完成',
+                                                    'thread':runnable})
+        
 
 class FileInfoDialog(QtGui.QDialog):
     ''' 文件信息对话框 '''
@@ -555,7 +604,15 @@ class FileInfoDialog(QtGui.QDialog):
         self.createDateValueLabel = QtGui.QLabel('')
         
         ''' button '''
-        self.buttonBox = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
+        self.buttonBox = QtGui.QDialogButtonBox()
+        self.acceptBtn = QtGui.QPushButton("确认")
+        self.acceptBtn.setEnabled(False)
+        self.buttonBox.addButton(self.acceptBtn, QtGui.QDialogButtonBox.AcceptRole)
+        
+        self.cancelBtn = QtGui.QPushButton("取消")
+        self.cancelBtn.setEnabled(True)
+        self.buttonBox.addButton(self.cancelBtn, QtGui.QDialogButtonBox.RejectRole)
+        
         self.buttonBox.accepted.connect(self.updateAcl)
         self.buttonBox.rejected.connect(self.reject)
         
@@ -640,10 +697,23 @@ class FileInfoDialog(QtGui.QDialog):
         
         self.getFileAcl()
     
+    def fileInfoDidFailed(self, runnable, errorMsg):
+        self.openner.openner.operationLogTable.updateLogDict({'operation':'get file info', 
+                                                   'result':u'失败',
+                                                   'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"获取object信息失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
+    
     def getFileInfo(self):
         fileInfoRunnable = FileInfoRunnable(self.bucketName, u'%s%s'%(self.prefix,self.key))
         QtCore.QObject.connect(fileInfoRunnable.emitter,QtCore.SIGNAL('fileInfoRunnable(PyQt_PyObject, PyQt_PyObject)'),self.setupFileInfoView)
+        QtCore.QObject.connect(fileInfoRunnable.emitter,QtCore.SIGNAL('fileInfoDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.fileInfoDidFailed)
         self.openner.openner.startOperationRunnable(fileInfoRunnable)
+        
+        self.openner.openner.operationLogTable.updateLogDict({'operation':'get file info', 
+                                                   'result':u'处理中',
+                                                   'thread':fileInfoRunnable})
     
     def getFileAcl(self):
         s = SCSBucket(self.bucketName)
@@ -705,6 +775,8 @@ class FileInfoDialog(QtGui.QDialog):
                     
                 if 'write_acp' in value:
                     self.aclUserTable.item(row, 4).setCheckState(QtCore.Qt.Checked)
+                    
+        self.acceptBtn.setEnabled(True)
             
     def updateAcl(self):
         acl = {}
@@ -764,15 +836,28 @@ class FileInfoDialog(QtGui.QDialog):
                 acl[k] = v
         
         updateFileACLRunnable = UpdateFileACLRunnable(self.bucketName, '%s%s'%(self.prefix,self.key), acl)
-#         QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.setupFileInfoView)
+        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.updateFileAclDidFinished)
+        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.updateFileAclDidFailed)
         self.openner.openner.startOperationRunnable(updateFileACLRunnable)
         ''' add oper log'''
         self.openner.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
-                                                    'result':u'完成',
+                                                    'result':u'处理中',
                                                     'thread':updateFileACLRunnable})
         
         self.accept()
             
+    def updateFileAclDidFinished(self, runnable):
+        ''' add oper log'''
+        self.openner.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
+                                                    'result':u'完成',
+                                                    'thread':runnable})
+    def updateFileAclDidFailed(self, runnable, errorMsg):
+        self.openner.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
+                                                    'result':u'失败',
+                                                    'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"更新文件ACL失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
 
 class BucketTable(QtGui.QTableWidget):
     ''' bucket列表table '''
@@ -816,7 +901,20 @@ class BucketTable(QtGui.QTableWidget):
     def createBucket(self, bucketName):
         createBucketRunnable = CreateBucketRunnable(bucketName, self)
         QtCore.QObject.connect(createBucketRunnable.emitter,QtCore.SIGNAL('CreateBucket(PyQt_PyObject)'),self.createBucketDidFinished)
+        QtCore.QObject.connect(createBucketRunnable.emitter,QtCore.SIGNAL('CreateBucketDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.createBucketDidFailed)
         self.openner.startOperationRunnable(createBucketRunnable)
+        
+        self.openner.operationLogTable.updateLogDict({'operation':'create bucket', 
+                                                             'result':u'处理中',
+                                                             'thread':createBucketRunnable})
+        
+    def createBucketDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'create bucket', 
+                                                             'result':u'失败',
+                                                             'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"创建bucket失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
     
     def createBucketDidFinished(self, runnable):
         self.openner.operationLogTable.updateLogDict({'operation':'create bucket', 
@@ -879,7 +977,7 @@ class BucketTable(QtGui.QTableWidget):
             self.openner.startOperationRunnable(deleteBucketRunnable)
             
             self.openner.operationLogTable.updateLogDict({'operation':'delete bucket', 
-                                                               'result':u'...',
+                                                               'result':u'处理中',
                                                                'thread':deleteBucketRunnable})
     
     def deleteDidFailedAct(self,runnable,errorMsg):
@@ -899,14 +997,28 @@ class BucketTable(QtGui.QTableWidget):
         ''' 刷新当前列表 '''
         listBucketRunnable = ListBucketRunnable(self)
         QtCore.QObject.connect(listBucketRunnable.emitter,QtCore.SIGNAL('ListBucketRunnable(PyQt_PyObject)'),self.loginDidFinished)
+        QtCore.QObject.connect(listBucketRunnable.emitter,QtCore.SIGNAL('ListBucketRunnableDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.listBucketDidFailed)
         self.openner.startOperationRunnable(listBucketRunnable)
         
         self.openner.operationLogTable.updateLogDict({'operation':'list bucket', 
-                                                   'result':u'完成',
+                                                   'result':u'处理中',
                                                    'thread':listBucketRunnable})
         
     def loginDidFinished(self,runnable):
+        self.openner.operationLogTable.updateLogDict({'operation':'list bucket', 
+                                                   'result':u'完成',
+                                                   'thread':runnable})
+        
         self.setBuckets(runnable.bucketIter())
+        
+    def listBucketDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'list bucket', 
+                                                   'result':u'失败',
+                                                   'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"获取bucket列表失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
+
 
 class FilesTable(QtGui.QTableWidget):
     ''' 用于文件列表的table '''
@@ -937,6 +1049,15 @@ class FilesTable(QtGui.QTableWidget):
                                                              'thread':thread})
         self.refreshTableList()
         
+    def uploadFileDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+                                                             'result':u'失败',
+                                                             'thread':runnable})
+        
+        reply = QtGui.QMessageBox.information(self,
+                u"上传失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
+        
     def uploadFileUpdateProgress(self, thread, total, received):
         ''' 更新上传进度 '''
         if thread.received*100 / thread.total != 100:
@@ -959,7 +1080,19 @@ class FilesTable(QtGui.QTableWidget):
         
         createFolderRunnable = CreateFolderRunnable(self.currentBucketName, filePath, self)
         QtCore.QObject.connect(createFolderRunnable.emitter,QtCore.SIGNAL('CreateFolder(PyQt_PyObject)'),self.createFolderDidFinished)
+        QtCore.QObject.connect(createFolderRunnable.emitter,QtCore.SIGNAL('CreateFolderDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.createFolderDidFailed)
         self.openner.startOperationRunnable(createFolderRunnable)
+        self.openner.operationLogTable.updateLogDict({'operation':'create folder', 
+                                                             'result':u'处理中',
+                                                             'thread':createFolderRunnable})
+    
+    def createFolderDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'create folder', 
+                                                             'result':u'失败',
+                                                             'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"创建目录失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
     
     def createFolderDidFinished(self, runnable):
         self.openner.operationLogTable.updateLogDict({'operation':'create folder', 
@@ -972,6 +1105,7 @@ class FilesTable(QtGui.QTableWidget):
             fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, self.currentPrefix, self)
             QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
             QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadFileDidFinished)
+            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadFileDidFailed)
             self.openner.startOperationRunnable(fileUploadRunnable)
     
     def downloadFileAction(self, event):
@@ -993,6 +1127,7 @@ class FilesTable(QtGui.QTableWidget):
                 downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, '%s%s'%(self.currentPrefix,fileName), u'%s/%s'%(directory,os.path.basename(fileName)))
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable()'),self.refreshTableList)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),self.downloadFileUpdateProgress)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.downloadFileDidFailed)
                 self.openner.startOperationRunnable(downloadObjectRunnable)
             
     def downloadFileUpdateProgress(self, thread, total, received):
@@ -1018,6 +1153,59 @@ class FilesTable(QtGui.QTableWidget):
         fileInfoDialog = FileInfoDialog(self, self.currentBucketName, fileName, self.currentPrefix)
         fileInfoDialog.exec_()
 
+    def delMultiObjectAction(self, event):
+        ''' 批量删除文件 '''
+        rows=[]
+        for idx in self.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        self.toBeDeleteObjectsArray  = []
+        for rowNum in rowSet:
+            fileName = u'%s'%self.item(rowNum, 0).text()
+            self.toBeDeleteObjectsArray.append('%s%s'%(self.currentPrefix,fileName))
+            
+        for path in self.toBeDeleteObjectsArray :
+            deleteObjectRunnable = DeleteObjectRunnable(self.currentBucketName,path)
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable(PyQt_PyObject)'),self.deleteMultiObjectDidFinished)
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteMultiObjectDidFailed)
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteMultiObjectForbidden)
+            self.openner.startOperationRunnable(deleteObjectRunnable)
+        
+    def deleteMultiObjectDidFinished(self, runnable):
+        if runnable.key in self.toBeDeleteObjectsArray:
+            self.toBeDeleteObjectsArray.remove(runnable.key)
+            
+        self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                           'result':u'完成',
+                                                           'thread':runnable})
+            
+        ''' 刷新列表 '''
+        if len(self.toBeDeleteObjectsArray) == 0:
+            self.refreshTableList()
+    
+    def deleteMultiObjectForbidden(self, runnable, errorMsg):
+        ''' 批量删除某个文件-禁止（针对有文件的文件夹） '''
+        if runnable.key in self.toBeDeleteObjectsArray:
+            self.toBeDeleteObjectsArray.remove(runnable.key)
+            
+        self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                           'result':u'禁止操作',
+                                                           'thread':runnable})
+    
+    def deleteMultiObjectDidFailed(self, runnable, errorMsg):
+        ''' 批量删除某个文件-失败 '''
+        if runnable.key in self.toBeDeleteObjectsArray:
+            self.toBeDeleteObjectsArray.remove(runnable.key)
+            
+        self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                           'result':u'失败',
+                                                           'thread':runnable})
+        
+        ''' 刷新列表 '''
+        if len(self.toBeDeleteObjectsArray) == 0:
+            self.refreshTableList()
+    
+
     def delAction(self, event):
         ''' 文件列表右键contextMenu-删除文件 action '''
         rows=[]
@@ -1026,15 +1214,40 @@ class FilesTable(QtGui.QTableWidget):
         rowSet = set(rows)
         
         for rowNum in rowSet:
-            fileName = u'%s'%self.item(rowNum, 0).text()#unicode(self.item(rowNum, 0).text(),'utf-8','ignore')
+            fileName = u'%s'%self.item(rowNum, 0).text()
             deleteObjectRunnable = DeleteObjectRunnable(self.currentBucketName,'%s%s'%(self.currentPrefix,fileName))
-            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable()'),self.refreshTableList)
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable(PyQt_PyObject)'),self.deleteObjectDidFinished)
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectDidFailed)
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectForbidden)
             self.openner.startOperationRunnable(deleteObjectRunnable)
             
             self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
-                                                           'result':u'完成',
+                                                           'result':u'处理中',
                                                            'thread':deleteObjectRunnable})
-            
+    
+    def deleteObjectForbidden(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                           'result':u'禁止操作',
+                                                           'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"删除object失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
+    
+    def deleteObjectDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                           'result':u'失败',
+                                                           'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"删除object失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
+        
+    def deleteObjectDidFinished(self, runnable):
+        self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                           'result':u'完成',
+                                                           'thread':runnable})
+        
+        self.refreshTableList()
+        
         
     def contextMenuEvent(self, event):
         rows=[]
@@ -1044,46 +1257,47 @@ class FilesTable(QtGui.QTableWidget):
         
         menu = QtGui.QMenu(self)
         
+       
+        fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
+        ''' 下载 '''
+        downloadFileAct = QtGui.QAction(u"&下载文件", self,
+            shortcut="Ctrl+D",
+            statusTip=u"下载文件到本地磁盘.",
+            triggered=self.downloadFileAction)
+        menu.addAction(downloadFileAct)
+        ''' 文件信息 '''
+        fileInfoAct = QtGui.QAction(u"文件信息", self,
+            shortcut="Ctrl+I", statusTip=u"打开文件详细信息页",
+            triggered=self.fileInfoAction)
+        menu.addAction(fileInfoAct)
+        
         if len(rowSet) == 1:#单选
-            fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
-            ''' 下载 '''
-            downloadFileAct = QtGui.QAction(u"&下载文件", self,
-                shortcut="Ctrl+D",
-                statusTip=u"下载文件到本地磁盘.",
-                triggered=self.downloadFileAction)
-            menu.addAction(downloadFileAct)
-            ''' 文件信息 '''
-            fileInfoAct = QtGui.QAction(u"文件信息", self,
-                shortcut="Ctrl+I", statusTip=u"打开文件详细信息页",
-                triggered=self.fileInfoAction)
-            menu.addAction(fileInfoAct)
-            
             if fileName.find('/') == len(fileName)-1 :
                 fileInfoAct.setEnabled(False) 
                 downloadFileAct.setEnabled(False)
             else:
                 fileInfoAct.setEnabled(True) 
                 downloadFileAct.setEnabled(True)
-            
+                
             menu.addSeparator()
             ''' 删除 '''
             delAct = QtGui.QAction(u"删除文件", self,
                 shortcut="Ctrl+R", statusTip=u"删除远端文件",
                 triggered=self.delAction)
             menu.addAction(delAct)
-            
-            menu.exec_(event.globalPos())
         else:#多选
-            print '--------'
-        
-#         index = self.indexAt(event.pos())
-#         rowNum = index.row()
-#         
-#         if rowNum > 0 and rowNum < self.rowCount():
-#             print rowNum
-#         else:#其他位置
-#             print rowNum
-#     
+            fileInfoAct.setEnabled(False) 
+            downloadFileAct.setEnabled(False)
+            
+            menu.addSeparator()
+            ''' 删除 '''
+            delAct = QtGui.QAction(u"删除文件", self,
+                shortcut="Ctrl+R", statusTip=u"删除远端文件",
+                triggered=self.delMultiObjectAction)
+            menu.addAction(delAct)
+            
+        menu.exec_(event.globalPos())
+            
 
     def enableToolBarButton(self):
         if len(self.selectedItems()) > 0 and self.selectedIndexes()[0].row() != 0:
@@ -1124,6 +1338,15 @@ class FilesTable(QtGui.QTableWidget):
         
         self.refreshTableList()
     
+    def downloadFileDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'download file', 
+                                                   'result':u'失败',
+                                                   'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"下载object失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
+        
+    
     def refreshTableList(self):
         ''' 刷新当前列表 '''
         self.clearContents()
@@ -1131,14 +1354,26 @@ class FilesTable(QtGui.QTableWidget):
         
         listDirRunnable = ListDirRunnable(bucketName=self.currentBucketName, prefix=self.currentPrefix, delimiter='/')
         QtCore.QObject.connect(listDirRunnable.emitter,QtCore.SIGNAL('ListDirRunnable(PyQt_PyObject)'),self.showFilesOfBucket)
+        QtCore.QObject.connect(listDirRunnable.emitter,QtCore.SIGNAL('ListDirDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.listDirDidFailed)
         self.openner.startOperationRunnable(listDirRunnable)
         
         self.openner.operationLogTable.updateLogDict({'operation':'list dir', 
-                                                   'result':u'完成',
+                                                   'result':u'处理中',
                                                    'thread':listDirRunnable})
         
-        
+    def listDirDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'list dir', 
+                                                   'result':u'失败',
+                                                   'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"获取object列表失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
+    
     def showFilesOfBucket(self, runnable):#bucketName, prefix=None, marker=None, limit=None, delimiter='/'):
+        self.openner.operationLogTable.updateLogDict({'operation':'list dir', 
+                                                   'result':u'完成',
+                                                   'thread':runnable})
+        
         self.setSortingEnabled(False)
         files_generator = runnable.files_generator
         
