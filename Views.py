@@ -285,8 +285,10 @@ class BucketInfoDialog(QtGui.QDialog):
         self.sizeCLabel = QtGui.QLabel('')
         deleteCapacityNameLabel = QtGui.QLabel("DeleteCapacity:")
         self.deleteCapacityLabel = QtGui.QLabel('')
-        quantityNameLabel = QtGui.QLabel("Quantity:")
+        quantityNameLabel = QtGui.QLabel(u"文件总数量:")
         self.quantityLabel = QtGui.QLabel('')
+        capacityNameLabel = QtGui.QLabel(u"文件总大小:")
+        self.capacityLabel = QtGui.QLabel('')
         ownerNameLabel = QtGui.QLabel("Owner:")
         self.ownerLabel = QtGui.QLabel('')
         
@@ -316,8 +318,10 @@ class BucketInfoDialog(QtGui.QDialog):
         mainLayout.addWidget(self.deleteCapacityLabel, 11, 1)
         mainLayout.addWidget(quantityNameLabel, 12, 0)
         mainLayout.addWidget(self.quantityLabel, 12, 1)
-        mainLayout.addWidget(ownerNameLabel, 13, 0)
-        mainLayout.addWidget(self.ownerLabel, 13, 1)
+        mainLayout.addWidget(capacityNameLabel, 13, 0)
+        mainLayout.addWidget(self.capacityLabel, 13, 1)
+        mainLayout.addWidget(ownerNameLabel, 14, 0)
+        mainLayout.addWidget(self.ownerLabel, 14, 1)
         
         ''' acl '''
         self.aclTable = QtGui.QTableWidget(2, 5, self)
@@ -353,7 +357,7 @@ class BucketInfoDialog(QtGui.QDialog):
         item.setFlags(QtCore.Qt.ItemIsEnabled)
         item.setTextAlignment(QtCore.Qt.AlignCenter)
         self.aclTable.setItem(1, 0, item)
-        mainLayout.addWidget(self.aclTable,14,0,1,2)
+        mainLayout.addWidget(self.aclTable,15,0,1,2)
 
         
         ''' acl user '''        
@@ -367,7 +371,7 @@ class BucketInfoDialog(QtGui.QDialog):
         self.aclUserTable.verticalHeader().hide()
         self.aclUserTable.setShowGrid(False)
         
-        mainLayout.addWidget(self.aclUserTable,15,0,1,2)
+        mainLayout.addWidget(self.aclUserTable,16,0,1,2)
         
         ''' button '''
         self.buttonBox = QtGui.QDialogButtonBox()
@@ -382,7 +386,7 @@ class BucketInfoDialog(QtGui.QDialog):
         self.buttonBox.accepted.connect(self.updateAcl)
         self.buttonBox.rejected.connect(self.reject)
         
-        mainLayout.addWidget(self.buttonBox, 16, 0, 1, 2)
+        mainLayout.addWidget(self.buttonBox, 17, 0, 1, 2)
         
         self.setLayout(mainLayout)
         self.setWindowTitle(u'%s的Meta信息'%self.bucketName)
@@ -432,7 +436,7 @@ u'RelaxUpload': True,
         '''
         self.deleteQuantityLabel.setText('%d'%metaResult['DeleteQuantity'])
         self.deleteCapacityLabel.setText('%d'%metaResult['DeleteCapacity'])
-        self.capacityCLabel.setText('%d'%metaResult['Capacity'])
+        self.capacityLabel.setText(filesizeformat('%d'%metaResult['Capacity']))
         self.projectIdLabel.setText('%d'%metaResult['ProjectID'])
         self.sizeCLabel.setText('%d'%metaResult['SizeC'])
         self.downloadCapacityLabel.setText('%d'%metaResult['DownloadCapacity'])
@@ -692,7 +696,7 @@ class FileInfoDialog(QtGui.QDialog):
                                                    'result':u'完成',
                                                    'thread':runnable})
         self.kindValueLabel.setText(info['mimetype'])
-        self.sizeValueLabel.setText("%d KB" % (int((info['size'] + 1023) / 1024)))
+        self.sizeValueLabel.setText(filesizeformat(info['size']))#"%d KB" % (int((info['size'] + 1023) / 1024)))
         self.createDateValueLabel.setText(info['modify'].strftime('%Y-%m-%d %H:%M:%S'))
         
         self.getFileAcl()
@@ -1020,6 +1024,111 @@ class BucketTable(QtGui.QTableWidget):
                 u'<p>失败原因：%s</p>'%errorMsg)
 
 
+class UploadFilesConfirmDialog(QtGui.QDialog):
+    ''' 用于拖拽文件时的确认对话框 '''
+    def __init__(self, filesPath, openner):
+        super(UploadFilesConfirmDialog, self).__init__(openner)
+        self.openner = openner
+        self.filesPath = filesPath
+        
+        self.checkAllState = False
+        
+        self.initViews()
+        
+    def initViews(self):
+#         for str in self.filesPath:
+#             print '------[%s]'%str
+            
+        mainLayout = QtGui.QGridLayout()
+        
+        ''' button '''
+        self.buttonBox = QtGui.QDialogButtonBox()
+        self.checkAllBtn = QtGui.QPushButton(u"全选")
+        self.checkAllBtn.setEnabled(True)
+        self.checkAllBtn.clicked.connect(self.checkAllAction)
+        self.buttonBox.addButton(self.checkAllBtn, QtGui.QDialogButtonBox.ActionRole)
+        self.acceptBtn = QtGui.QPushButton(u"上传")
+        self.acceptBtn.setEnabled(False)
+        self.buttonBox.addButton(self.acceptBtn, QtGui.QDialogButtonBox.AcceptRole)
+        self.cancelBtn = QtGui.QPushButton(u"取消")
+        self.cancelBtn.setEnabled(True)
+        self.buttonBox.addButton(self.cancelBtn, QtGui.QDialogButtonBox.RejectRole)
+        self.buttonBox.accepted.connect(self.uploadSelectedFile)
+        self.buttonBox.rejected.connect(self.reject)
+        
+        mainLayout.addWidget(self.buttonBox, 1, 0, 1, 2)
+        
+        
+        self.uploadTable = QtGui.QTableWidget(0, 2, self)
+        self.uploadTable.setHorizontalHeaderLabels((u"文件路径", u"文件大小"))
+        self.uploadTable.horizontalHeader().setResizeMode(0, QtGui.QHeaderView.Stretch)
+        self.uploadTable.horizontalHeader().setResizeMode(1, QtGui.QHeaderView.ResizeToContents)
+        self.uploadTable.verticalHeader().hide()
+        self.uploadTable.setShowGrid(False)
+        self.uploadTable.itemChanged.connect(self.itemChangedAct)
+        
+        import os
+        for str in self.filesPath:
+            filePath = u'%s'%str
+            ''' 暂时过滤掉目录！！ '''
+            if filePath is None or len(filePath) == 0 or os.path.isdir(filePath[7:]):
+                continue
+            
+            row = self.uploadTable.rowCount()
+            self.uploadTable.insertRow(row)
+            
+            item = QtGui.QTableWidgetItem(filePath[7:])
+            item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+            item.setCheckState(QtCore.Qt.Unchecked)
+            self.uploadTable.setItem(row, 0, item)
+            
+            
+            item = QtGui.QTableWidgetItem(filesizeformat(os.stat(filePath[7:]).st_size))
+            item.setFlags(QtCore.Qt.ItemIsEnabled)
+            self.uploadTable.setItem(row, 1, item)
+        
+        mainLayout.addWidget(self.uploadTable,0,0,1,2)
+        
+        noteLabel = QtGui.QLabel(u"<font color=red>注：暂不支持文件夹上传，当前列表已自动过滤掉所选的文件夹</font>")
+        mainLayout.addWidget(noteLabel,2,0,1,2)
+            
+        self.setLayout(mainLayout)
+        self.setWindowTitle(u'确认待上传文件')
+        self.resize(400, 400)
+    
+    def itemChangedAct(self, item):
+        for i in xrange(self.uploadTable.rowCount()):
+            cell = self.uploadTable.item(i, 0)
+            if cell.checkState() == QtCore.Qt.Checked:
+                self.acceptBtn.setEnabled(True)
+                return
+            
+        self.acceptBtn.setEnabled(False)
+
+    
+    def uploadSelectedFile(self):
+        ''' 上传文件 '''
+        uploadFilePathArray = []
+        for i in xrange(self.uploadTable.rowCount()):
+            cell = self.uploadTable.item(i, 0)
+            if cell.checkState() == QtCore.Qt.Checked:
+                uploadFilePathArray.append(u'%s'%cell.text())
+            
+        print '======uploadFilePathArray========',uploadFilePathArray
+        self.openner.uploadMultiObjectAction(uploadFilePathArray)
+        self.hide()
+        
+    def checkAllAction(self):
+        ''' 全选按钮事件 '''
+        for i in xrange(self.uploadTable.rowCount()):
+            cell = self.uploadTable.item(i, 0)
+            if not self.checkAllState:
+                cell.setCheckState(QtCore.Qt.Checked)
+            else:
+                cell.setCheckState(QtCore.Qt.Unchecked)
+        
+        self.checkAllState = not self.checkAllState
+
 class FilesTable(QtGui.QTableWidget):
     ''' 用于文件列表的table '''
     def __init__(self, bucketName, openner=None):
@@ -1042,6 +1151,60 @@ class FilesTable(QtGui.QTableWidget):
         
         self.currentBucketName = bucketName;
         self.refreshTableList()
+        
+        self.setAcceptDrops(True)
+    
+    def dragEnterEvent(self, event):
+#         self.setText("<drop content>")
+#         self.setBackgroundRole(QtGui.QPalette.Highlight)
+        event.acceptProposedAction()
+#         self.changed.emit(event.mimeData())
+
+    def dragMoveEvent(self, event):
+        event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        mimeData = event.mimeData()
+#         for str in mimeData.formats():
+#             print '==========',str
+        
+        if mimeData.hasText():
+            uploadFilesConfirmDialog = UploadFilesConfirmDialog(mimeData.text().split('\n'), self)
+            uploadFilesConfirmDialog.show()
+        
+#         if mimeData.hasImage():
+# #             self.setPixmap(QtGui.QPixmap(mimeData.imageData()))
+#             print '=========dropEvent================hasImage'
+#         elif mimeData.hasHtml():
+#             print '=========dropEvent================hasHtml'
+# #             self.setText(mimeData.html())
+# #             self.setTextFormat(QtCore.Qt.RichText)
+#         elif mimeData.hasText():
+#             print '=========dropEvent================hasText'
+#             print '0----------------------text--[%s]'%mimeData.text()
+# #             self.setText(mimeData.text())
+# #             self.setTextFormat(QtCore.Qt.PlainText)
+#         elif mimeData.hasUrls():
+#             print '=========dropEvent================hasUrls'
+# #             self.setText("\n".join([url.path() for url in mimeData.urls()]))
+#         else:
+# #             self.setText("Cannot display data")
+#             print '=========dropEvent================Cannot display data'
+
+#         self.setBackgroundRole(QtGui.QPalette.Dark)
+        event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        event.accept()
+        
+        
+        
+        
+    
+    
+    
+    
+    
     
     def uploadFileDidFinished(self, thread):
         self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
@@ -1153,6 +1316,41 @@ class FilesTable(QtGui.QTableWidget):
         fileInfoDialog = FileInfoDialog(self, self.currentBucketName, fileName, self.currentPrefix)
         fileInfoDialog.exec_()
 
+    def uploadMultiObjectAction(self, filePathArray):
+        ''' 批量上传文件 '''
+        self.toBeUploadObjectsArray  = filePathArray
+            
+        for filePath in self.toBeUploadObjectsArray :
+            fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, self.currentPrefix, self)
+            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
+            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadMultiFileDidFinished)
+            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidFailed)
+            self.openner.startOperationRunnable(fileUploadRunnable)
+
+    def uploadMultiFileDidFinished(self, runnable):
+        ''' 批量上传文件--完成 '''
+        if runnable.filePath in self.toBeUploadObjectsArray:
+            self.toBeUploadObjectsArray.remove(runnable.filePath)
+            
+        self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+                                                             'result':u'完成',
+                                                             'thread':runnable})
+        ''' 刷新列表 '''
+        if len(self.toBeUploadObjectsArray) == 0:
+            self.refreshTableList()
+    
+    def uploadMultiFileDidFailed(self, runnable, errorMsg):
+        ''' 批量上传文件--失败 '''
+        if runnable.filePath in self.toBeUploadObjectsArray:
+            self.toBeUploadObjectsArray.remove(runnable.filePath)
+            
+        self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+                                                             'result':u'失败',
+                                                             'thread':runnable})
+        ''' 刷新列表 '''
+        if len(self.toBeUploadObjectsArray) == 0:
+            self.refreshTableList()
+
     def delMultiObjectAction(self, event):
         ''' 批量删除文件 '''
         msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning,
@@ -1198,6 +1396,10 @@ class FilesTable(QtGui.QTableWidget):
         self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
                                                            'result':u'禁止操作',
                                                            'thread':runnable})
+        
+        ''' 刷新列表 '''
+        if len(self.toBeDeleteObjectsArray) == 0:
+            self.refreshTableList()
     
     def deleteMultiObjectDidFailed(self, runnable, errorMsg):
         ''' 批量删除某个文件-失败 '''
