@@ -1030,15 +1030,10 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         super(UploadFilesConfirmDialog, self).__init__(openner)
         self.openner = openner
         self.filesPath = filesPath
-        
-        self.checkAllState = False
-        
+        self.checkAllState = False  #用于全选的状态标识
         self.initViews()
         
     def initViews(self):
-#         for str in self.filesPath:
-#             print '------[%s]'%str
-            
         mainLayout = QtGui.QGridLayout()
         
         ''' button '''
@@ -1068,22 +1063,25 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         self.uploadTable.itemChanged.connect(self.itemChangedAct)
         
         import os
+        from urllib import unquote
+        
         for str in self.filesPath:
-            filePath = u'%s'%str
+            filePath = unquote('%s'%str)
+            print '----------------',filePath
             ''' 暂时过滤掉目录！！ '''
-            if filePath is None or len(filePath) == 0 or os.path.isdir(filePath[7:]):
+            if filePath is None or len(filePath) == 0 or os.path.isdir(filePath):
                 continue
             
             row = self.uploadTable.rowCount()
             self.uploadTable.insertRow(row)
             
-            item = QtGui.QTableWidgetItem(filePath[7:])
+            item = QtGui.QTableWidgetItem(filePath)
             item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
             item.setCheckState(QtCore.Qt.Unchecked)
             self.uploadTable.setItem(row, 0, item)
             
             
-            item = QtGui.QTableWidgetItem(filesizeformat(os.stat(filePath[7:]).st_size))
+            item = QtGui.QTableWidgetItem(filesizeformat(os.stat(filePath).st_size))
             item.setFlags(QtCore.Qt.ItemIsEnabled)
             self.uploadTable.setItem(row, 1, item)
         
@@ -1168,8 +1166,12 @@ class FilesTable(QtGui.QTableWidget):
 #         for str in mimeData.formats():
 #             print '==========',str
         
-        if mimeData.hasText():
-            uploadFilesConfirmDialog = UploadFilesConfirmDialog(mimeData.text().split('\n'), self)
+        if mimeData.hasUrls():
+            urlArray = []
+            for url in mimeData.urls():
+                urlArray.append(url.encodedPath())
+        
+            uploadFilesConfirmDialog = UploadFilesConfirmDialog(urlArray, self)
             uploadFilesConfirmDialog.show()
         
 #         if mimeData.hasImage():
