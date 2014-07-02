@@ -1270,8 +1270,11 @@ class FilesTable(QtGui.QTableWidget):
         rowSet = set(rows)
         
         menu = QtGui.QMenu(self)
+        menu.setContextMenuPolicy(QtCore.Qt.ActionsContextMenu)
         
-       
+        if len(rowSet) <= 0:
+            return
+        
         fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
         ''' 下载 '''
         downloadFileAct = QtGui.QAction(u"&下载文件", self,
@@ -1403,11 +1406,11 @@ class FilesTable(QtGui.QTableWidget):
         modifyItem = FileTableCellItem('--', self)  #modify
         md5Item = FileTableCellItem('--', self)  #md5
         sizeItem = FileTableCellItem('--', self)  #size
-        fileNameItem.setFlags(fileNameItem.flags() & ~QtCore.Qt.ItemIsEditable)
-        sha1Item.setFlags(sha1Item.flags() & ~QtCore.Qt.ItemIsEditable)
-        modifyItem.setFlags(modifyItem.flags() & ~QtCore.Qt.ItemIsEditable)
-        md5Item.setFlags(md5Item.flags() & ~QtCore.Qt.ItemIsEditable)
-        sizeItem.setFlags(sizeItem.flags() & ~QtCore.Qt.ItemIsEditable)
+        fileNameItem.setFlags(fileNameItem.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable)
+        sha1Item.setFlags(sha1Item.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable)
+        modifyItem.setFlags(modifyItem.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable)
+        md5Item.setFlags(md5Item.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable)
+        sizeItem.setFlags(sizeItem.flags() & ~QtCore.Qt.ItemIsEditable & ~QtCore.Qt.ItemIsSelectable)
 
         row = self.rowCount()
         self.insertRow(row)
