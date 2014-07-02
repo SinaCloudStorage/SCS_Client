@@ -371,11 +371,11 @@ class BucketInfoDialog(QtGui.QDialog):
         
         ''' button '''
         self.buttonBox = QtGui.QDialogButtonBox()
-        self.acceptBtn = QtGui.QPushButton("确认")
+        self.acceptBtn = QtGui.QPushButton(u"确认")
         self.acceptBtn.setEnabled(False)
         self.buttonBox.addButton(self.acceptBtn, QtGui.QDialogButtonBox.AcceptRole)
         
-        self.cancelBtn = QtGui.QPushButton("取消")
+        self.cancelBtn = QtGui.QPushButton(u"取消")
         self.cancelBtn.setEnabled(True)
         self.buttonBox.addButton(self.cancelBtn, QtGui.QDialogButtonBox.RejectRole)
         
@@ -605,11 +605,11 @@ class FileInfoDialog(QtGui.QDialog):
         
         ''' button '''
         self.buttonBox = QtGui.QDialogButtonBox()
-        self.acceptBtn = QtGui.QPushButton("确认")
+        self.acceptBtn = QtGui.QPushButton(u"确认")
         self.acceptBtn.setEnabled(False)
         self.buttonBox.addButton(self.acceptBtn, QtGui.QDialogButtonBox.AcceptRole)
         
-        self.cancelBtn = QtGui.QPushButton("取消")
+        self.cancelBtn = QtGui.QPushButton(u"取消")
         self.cancelBtn.setEnabled(True)
         self.buttonBox.addButton(self.cancelBtn, QtGui.QDialogButtonBox.RejectRole)
         
