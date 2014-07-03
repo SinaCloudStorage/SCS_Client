@@ -11,6 +11,7 @@ from sinastorage.bucket import SCSBucket,ACL, SCSError, KeyNotFound, BadRequest,
 from sinastorage.utils import rfc822_fmtdate, info_dict
 
 from sinastorage.utils import (rfc822_parsedate)
+from encoding import smart_str, smart_unicode
 
 class FileUploadRunnable(QtCore.QRunnable):
     ''' 文件上传 '''
@@ -137,7 +138,7 @@ class ListDirRunnable(QtCore.QRunnable):
 
     def run(self):
         try:
-            from encoding import smart_str, smart_unicode
+            
             self.mutex.lock()
             s = SCSBucket(self.bucketName)
             m = (("prefix", smart_str(self.prefix)),
@@ -173,7 +174,7 @@ class DeleteObjectRunnable(QtCore.QRunnable):
             
             s = SCSBucket(self.bucketName)
             if self.key.rfind('/') == len(self.key)-1 :
-                m = (("prefix", self.key),
+                m = (("prefix", smart_str(self.key)),
                      ("delimiter", '/'),
                      ("max-keys", 5),
                      ("formatter","json"))

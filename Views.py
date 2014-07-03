@@ -1077,8 +1077,13 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
             
             if os.path.isdir(filePath):
                 filesAmount = getFileAmount(filePath)
+
+                if os.name == 'nt':
+                    folderName = os.path.basename(filePath)
+                else:
+                    folderName = os.path.basename(os.path.dirname(filePath))
                 
-                item = FileTableCellItem(u'%s(共%d项)'%(os.path.basename(os.path.dirname(filePath)),filesAmount), self.uploadTable)
+                item = FileTableCellItem(u'%s(共%d项)'%(folderName,filesAmount), self.uploadTable)
                 item.setIcon(QtGui.QIcon(':/folder_icon.png'))
                 if filesAmount > 500 :
                     item.setFlags(QtCore.Qt.ItemIsUserCheckable )
@@ -1140,7 +1145,7 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
                 else:
                     uploadFilePathArray.append(u'%s'%cell.userInfo['filePath'])
             
-#         print '======uploadFilePathArray========',uploadFilePathArray
+        print '======uploadFilePathArray========',uploadFilePathArray
         self.openner.uploadMultiObjectAction(uploadFilePathArray,os.path.dirname(filePath)+'/')
         self.hide()
         
@@ -1350,11 +1355,16 @@ class FilesTable(QtGui.QTableWidget):
     def uploadMultiObjectAction(self, filePathArray, basePath):
         ''' 批量上传文件 '''
         self.toBeUploadObjectsArray  = filePathArray
-        basePath = os.path.dirname(os.path.dirname(basePath))+'/'
+        if os.name == 'nt':
+            basePath = os.path.dirname(basePath)+'/'
+        else:
+            basePath = os.path.dirname(os.path.dirname(basePath))+'/'
         print '=============basePath=-------------',basePath
         for filePath in self.toBeUploadObjectsArray :
             if os.path.isdir(filePath):
                 dirName = filePath[filePath.find(basePath)+len(basePath):]
+                if os.name == 'nt':
+                    dirName = dirName.replace('\\','/')
                 print '=1===isdir(filePath)======',dirName
                 createFolderRunnable = CreateFolderRunnable(self.currentBucketName, u'%s%s/'%(self.currentPrefix,dirName), self)
                 createFolderRunnable.filePath = filePath
@@ -1366,6 +1376,8 @@ class FilesTable(QtGui.QTableWidget):
                                                                      'thread':createFolderRunnable})
             else:
                 fName = filePath[filePath.find(basePath)+len(basePath):]
+                if os.name == 'nt':
+                    fName = fName.replace('\\','/')
                 prefix = u'%s%s'%(self.currentPrefix,os.path.dirname(fName)+'/' if len(os.path.dirname(fName))>0 else '')
                 if cmp(prefix, '/') == 0:
                     prefix = ''
@@ -1456,7 +1468,6 @@ class FilesTable(QtGui.QTableWidget):
     def deleteMultiObjectDidFinished(self, runnable):
         if runnable.key in self.toBeDeleteObjectsArray:
             self.toBeDeleteObjectsArray.remove(runnable.key)
-            
         self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
                                                            'result':u'完成',
                                                            'thread':runnable})
@@ -1469,7 +1480,6 @@ class FilesTable(QtGui.QTableWidget):
         ''' 批量删除某个文件-禁止（针对有文件的文件夹） '''
         if runnable.key in self.toBeDeleteObjectsArray:
             self.toBeDeleteObjectsArray.remove(runnable.key)
-            
         self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
                                                            'result':u'禁止操作',
                                                            'thread':runnable})
@@ -1482,7 +1492,6 @@ class FilesTable(QtGui.QTableWidget):
         ''' 批量删除某个文件-失败 '''
         if runnable.key in self.toBeDeleteObjectsArray:
             self.toBeDeleteObjectsArray.remove(runnable.key)
-            
         self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
                                                            'result':u'失败',
                                                            'thread':runnable})
