@@ -299,6 +299,7 @@ class CreateFolderRunnable(QtCore.QRunnable):
         QtCore.QRunnable.__init__(self)
         self.bucketName = bucketName
         self.key = key
+        self.filePath = None
         self.mutex = QtCore.QMutex()
         
     def run(self):

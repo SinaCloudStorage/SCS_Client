@@ -18,7 +18,7 @@ import sinastorage
 from sinastorage.bucket import SCSBucket,ACL, SCSError, KeyNotFound, BadRequest, SCSResponse
 from sinastorage.utils import rfc822_fmtdate, rfc822_parsedate
 
-from Utils import filesizeformat, bytesFromFilesizeFormat
+from Utils import filesizeformat, bytesFromFilesizeFormat, getFileAmount
 
 from Runnables import (FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
@@ -1062,33 +1062,52 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         self.uploadTable.setShowGrid(False)
         self.uploadTable.itemChanged.connect(self.itemChangedAct)
         
-        import os
         from urllib2 import unquote
         
         for str in self.filesPath:
-            print '===str===',str
             filePath = unquote('%s'%str).decode('utf8','ignore')
-            print '----------------',filePath
-            ''' 暂时过滤掉目录！！ '''
-            if filePath is None or len(filePath) == 0 or os.path.isdir(filePath[1:]):
+            if os.name == 'net':
+                filePath = filePath[1:]
+            
+            if filePath is None or len(filePath) == 0 :#or os.path.isdir(filePath):
                 continue
             
             row = self.uploadTable.rowCount()
             self.uploadTable.insertRow(row)
             
-            item = QtGui.QTableWidgetItem(filePath[1:])
-            item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+            if os.path.isdir(filePath):
+                filesAmount = getFileAmount(filePath)
+                
+                item = FileTableCellItem(u'%s(共%d项)'%(os.path.basename(os.path.dirname(filePath)),filesAmount), self.uploadTable)
+                item.setIcon(QtGui.QIcon(':/folder_icon.png'))
+                if filesAmount > 500 :
+                    item.setFlags(QtCore.Qt.ItemIsUserCheckable )
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
+                else:
+                    item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+            else:
+                item = FileTableCellItem(os.path.basename(filePath), self.uploadTable)
+                item.setIcon(QtGui.QIcon(':/file_icon.png'))
+                item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+                
+            item.userInfo['filePath'] = filePath
             item.setCheckState(QtCore.Qt.Unchecked)
+            
+            
             self.uploadTable.setItem(row, 0, item)
             
-            
-            item = QtGui.QTableWidgetItem(filesizeformat(os.stat(filePath[1:]).st_size))
+            if os.path.isdir(filePath):
+                item = FileSizeCellItem('--', self.uploadTable)
+            else:
+                item = FileSizeCellItem(filesizeformat(os.stat(filePath).st_size), self.uploadTable)
+                
             item.setFlags(QtCore.Qt.ItemIsEnabled)
             self.uploadTable.setItem(row, 1, item)
         
+        self.uploadTable.setSortingEnabled(True)
         mainLayout.addWidget(self.uploadTable,0,0,1,2)
         
-        noteLabel = QtGui.QLabel(u"<font color=red>注：暂不支持文件夹上传，当前列表已自动过滤掉所选的文件夹</font>")
+        noteLabel = QtGui.QLabel(u"<font color=red>注：若文件夹内文件数量大于500，则不支持批量上传</font>")
         mainLayout.addWidget(noteLabel,2,0,1,2)
             
         self.setLayout(mainLayout)
@@ -1111,10 +1130,18 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         for i in xrange(self.uploadTable.rowCount()):
             cell = self.uploadTable.item(i, 0)
             if cell.checkState() == QtCore.Qt.Checked:
-                uploadFilePathArray.append(u'%s'%cell.text())
+                filePath = u'%s'%cell.userInfo['filePath']
+                if os.path.isdir(filePath):
+                    for (path, dirs, files) in os.walk(filePath):
+                        for dirName in dirs:
+                            uploadFilePathArray.append(os.path.join(path,dirName))
+                        for fileName in files:
+                            uploadFilePathArray.append(os.path.join(path,fileName))
+                else:
+                    uploadFilePathArray.append(u'%s'%cell.userInfo['filePath'])
             
-        print '======uploadFilePathArray========',uploadFilePathArray
-        self.openner.uploadMultiObjectAction(uploadFilePathArray)
+#         print '======uploadFilePathArray========',uploadFilePathArray
+        self.openner.uploadMultiObjectAction(uploadFilePathArray,os.path.dirname(filePath)+'/')
         self.hide()
         
     def checkAllAction(self):
@@ -1122,7 +1149,8 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         for i in xrange(self.uploadTable.rowCount()):
             cell = self.uploadTable.item(i, 0)
             if not self.checkAllState:
-                cell.setCheckState(QtCore.Qt.Checked)
+                if cell.flags() & QtCore.Qt.ItemIsEnabled:
+                    cell.setCheckState(QtCore.Qt.Checked)
             else:
                 cell.setCheckState(QtCore.Qt.Unchecked)
         
@@ -1319,16 +1347,62 @@ class FilesTable(QtGui.QTableWidget):
         fileInfoDialog = FileInfoDialog(self, self.currentBucketName, fileName, self.currentPrefix)
         fileInfoDialog.exec_()
 
-    def uploadMultiObjectAction(self, filePathArray):
+    def uploadMultiObjectAction(self, filePathArray, basePath):
         ''' 批量上传文件 '''
         self.toBeUploadObjectsArray  = filePathArray
-            
+        basePath = os.path.dirname(os.path.dirname(basePath))+'/'
+        print '=============basePath=-------------',basePath
         for filePath in self.toBeUploadObjectsArray :
-            fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, self.currentPrefix, self)
-            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
-            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadMultiFileDidFinished)
-            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidFailed)
-            self.openner.startOperationRunnable(fileUploadRunnable)
+            if os.path.isdir(filePath):
+                dirName = filePath[filePath.find(basePath)+len(basePath):]
+                print '=1===isdir(filePath)======',dirName
+                createFolderRunnable = CreateFolderRunnable(self.currentBucketName, u'%s%s/'%(self.currentPrefix,dirName), self)
+                createFolderRunnable.filePath = filePath
+                QtCore.QObject.connect(createFolderRunnable.emitter,QtCore.SIGNAL('CreateFolder(PyQt_PyObject)'),self.createMultiFolderDidFinished)
+                QtCore.QObject.connect(createFolderRunnable.emitter,QtCore.SIGNAL('CreateFolderDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.createMultiFolderDidFailed)
+                self.openner.startOperationRunnable(createFolderRunnable)
+                self.openner.operationLogTable.updateLogDict({'operation':'create folder', 
+                                                                     'result':u'处理中',
+                                                                     'thread':createFolderRunnable})
+            else:
+                fName = filePath[filePath.find(basePath)+len(basePath):]
+                prefix = u'%s%s'%(self.currentPrefix,os.path.dirname(fName)+'/' if len(os.path.dirname(fName))>0 else '')
+                if cmp(prefix, '/') == 0:
+                    prefix = ''
+                print '=2===not isdir(filePath)======',fName,prefix
+                
+                fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, prefix, self)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadMultiFileDidFinished)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidFailed)
+                self.openner.startOperationRunnable(fileUploadRunnable)
+                self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+                                                             'result':u'处理中',
+                                                             'thread':fileUploadRunnable})
+
+    def createMultiFolderDidFinished(self, runnable):
+        ''' 批量上传目录--完成 '''
+        if runnable.filePath in self.toBeUploadObjectsArray:
+            self.toBeUploadObjectsArray.remove(runnable.filePath)
+            
+        self.openner.operationLogTable.updateLogDict({'operation':'create folder', 
+                                                         'result':u'完成',
+                                                         'thread':runnable})
+        ''' 刷新列表 '''
+        if len(self.toBeUploadObjectsArray) == 0:
+            self.refreshTableList()
+            
+    def createMultiFolderDidFailed(self, runnable, errorMsg):
+        ''' 批量上传目录--失败 '''
+        if runnable.filePath in self.toBeUploadObjectsArray:
+            self.toBeUploadObjectsArray.remove(runnable.filePath)
+            
+        self.openner.operationLogTable.updateLogDict({'operation':'create folder', 
+                                                         'result':u'失败',
+                                                         'thread':runnable})
+        ''' 刷新列表 '''
+        if len(self.toBeUploadObjectsArray) == 0:
+            self.refreshTableList()
 
     def uploadMultiFileDidFinished(self, runnable):
         ''' 批量上传文件--完成 '''
@@ -1676,6 +1750,7 @@ class FileTableCellItem(QtGui.QTableWidgetItem) :
     def __init__(self, text, openner, type = QtGui.QTableWidgetItem.Type):
         super(FileTableCellItem, self).__init__(text, type)
         self.openner = openner
+        self.userInfo = {}  #用于添加其他信息
 
     def __ge__(self, other):
 #         print '====__ge__========',self.text() >= other.text()
@@ -1711,6 +1786,13 @@ class FileTableCellItem(QtGui.QTableWidgetItem) :
         else:    
             return self.text() < other.text()
             
-            
-            
+class FileSizeCellItem(FileTableCellItem) :
+    def __init__(self, text, openner):
+        super(FileSizeCellItem, self).__init__(text, openner)
+         
+    def __lt__(self, other):
+        str1 = u'%s'%self.text()
+        str2 = u'%s'%other.text()
+        
+        return bytesFromFilesizeFormat(str1) < bytesFromFilesizeFormat(str2)
         

@@ -17,7 +17,10 @@ from Views import FileInfoDialog, LoginWindow, OperationLogTable, FilesTable, Bu
 
 import sinastorage
 
-from Runnables import ListBucketRunnable
+from Runnables import (FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
+                       ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
+                       DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
+                       CreateFolderRunnable, CreateBucketRunnable)
 
 MAX_WINDOW_SIZE_WIDTH = 800
 MAX_WINDOW_SIZE_HIGHT = 600
@@ -50,7 +53,8 @@ class MainWindow(QtGui.QMainWindow):
 
     def startOperationRunnable(self, operationRunnable):
         if operationRunnable is not None :
-            self.threadPool.start(operationRunnable)
+            priority = 2 if isinstance(operationRunnable, ListBucketRunnable) or isinstance(operationRunnable, ListDirRunnable) else 0 
+            self.threadPool.start(operationRunnable,priority)
 
     def closeEvent(self, event):
         ''' 关闭事件 '''

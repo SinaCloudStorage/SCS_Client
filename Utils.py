@@ -4,7 +4,7 @@ Created on 2014年6月30日
 
 @author: hanchao
 '''
-import math
+import math, os
 
 def filesizeformat(bytes, precision=2):
     """Returns a humanized string for a given amount of bytes"""
@@ -40,3 +40,21 @@ def bytesFromFilesizeFormat(filesize):
             return float(filesize[0:len(filesize)-6])
     except Exception , e:
         return 0
+    
+def getFileAmount(path):
+    count = 0
+    for i in os.listdir(path): 
+        if os.path.isdir(os.path.join(path, i)): 
+            count += getFileAmount(os.path.join(path, i))
+
+        count += 1
+
+    return count
+
+
+    
+    
+    
+    
+    
+    
