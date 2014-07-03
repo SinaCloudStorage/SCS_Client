@@ -1063,25 +1063,26 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         self.uploadTable.itemChanged.connect(self.itemChangedAct)
         
         import os
-        from urllib import unquote
+        from urllib2 import unquote
         
         for str in self.filesPath:
-            filePath = unquote('%s'%str)
+            print '===str===',str
+            filePath = unquote('%s'%str).decode('utf8','ignore')
             print '----------------',filePath
             ''' 暂时过滤掉目录！！ '''
-            if filePath is None or len(filePath) == 0 or os.path.isdir(filePath):
+            if filePath is None or len(filePath) == 0 or os.path.isdir(filePath[1:]):
                 continue
             
             row = self.uploadTable.rowCount()
             self.uploadTable.insertRow(row)
             
-            item = QtGui.QTableWidgetItem(filePath)
+            item = QtGui.QTableWidgetItem(filePath[1:])
             item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
             item.setCheckState(QtCore.Qt.Unchecked)
             self.uploadTable.setItem(row, 0, item)
             
             
-            item = QtGui.QTableWidgetItem(filesizeformat(os.stat(filePath).st_size))
+            item = QtGui.QTableWidgetItem(filesizeformat(os.stat(filePath[1:]).st_size))
             item.setFlags(QtCore.Qt.ItemIsEnabled)
             self.uploadTable.setItem(row, 1, item)
         
