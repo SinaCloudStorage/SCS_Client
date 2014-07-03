@@ -137,9 +137,10 @@ class ListDirRunnable(QtCore.QRunnable):
 
     def run(self):
         try:
+            from encoding import smart_str, smart_unicode
             self.mutex.lock()
             s = SCSBucket(self.bucketName)
-            m = (("prefix", self.prefix),
+            m = (("prefix", smart_str(self.prefix)),
                  ("marker", self.marker),
                  ("max-keys", self.limit),
                  ("delimiter", self.delimiter),

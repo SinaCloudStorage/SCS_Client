@@ -1066,7 +1066,7 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         
         for str in self.filesPath:
             filePath = unquote('%s'%str).decode('utf8','ignore')
-            if os.name == 'net':
+            if os.name == 'nt':
                 filePath = filePath[1:]
             
             if filePath is None or len(filePath) == 0 :#or os.path.isdir(filePath):
