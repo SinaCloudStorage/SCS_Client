@@ -200,6 +200,7 @@ class OperationLogTable(QtGui.QTableWidget):
             OperationLogTable.logArray.append(logDict)
             idx = len(OperationLogTable.logArray)
             self.refreshOperationList()
+            self.scrollToBottom()
         else:
             self.updateCell(idx, logDict)
             
