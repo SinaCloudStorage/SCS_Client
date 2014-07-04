@@ -1268,16 +1268,18 @@ class FilesTable(QtGui.QTableWidget):
                 u'<p>失败原因：%s</p>'%errorMsg)
         
     def uploadFileUpdateProgress(self, thread, total, received):
-#         print '====================uploadFileUpdateProgress=========================%d======='%(thread.received*100.0 / thread.total),thread.received,thread.total
         ''' 更新上传进度 '''
-        if thread.received*100 / thread.total != 100:
-            result = u'上传中(%d%%)'%(thread.received*100 / thread.total)
-        else:
-            result = u'完成'
-            
-        self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
-                                                   'result':result,
-                                                   'thread':thread})
+        try:
+            if thread.received*100 / thread.total != 100:
+                result = u'上传中(%d%%)'%(thread.received*100 / thread.total)
+            else:
+                result = u'完成'
+                
+            self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+                                                       'result':result,
+                                                       'thread':thread})
+        except Exception,e:
+            pass
     
     def createFolder(self, folderName):
         ''' 创建目录 '''
