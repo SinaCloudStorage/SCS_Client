@@ -17,7 +17,13 @@ py2exe_options = {
 setup(
       name = 'PyQt Demo',
       version = '1.0',
-      windows = ['MainWindow.pyw',], 
+#       windows = ['MainWindow.pyw'], 
+      windows = [
+                 {
+                  'script':'MainWindow.pyw', 
+                  'icon_resources':[(1, "./icon.ico")]
+                  }
+                 ],
       zipfile = None,
       options = {'py2exe': py2exe_options}
       )
