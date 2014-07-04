@@ -13,6 +13,8 @@ from sinastorage.utils import rfc822_fmtdate, info_dict
 from sinastorage.utils import (rfc822_parsedate)
 from encoding import smart_str, smart_unicode
 
+import time
+
 class FileUploadRunnable(QtCore.QRunnable):
     ''' 文件上传 '''
     
@@ -211,6 +213,8 @@ class DownloadObjectRunnable(QtCore.QRunnable):
         
         self.received = 0
         self.total = 0
+        
+        self._received_tmp = 0
         self.mutex = QtCore.QMutex()
         
     def run(self):
@@ -225,13 +229,20 @@ class DownloadObjectRunnable(QtCore.QRunnable):
             else:
                 raise ValueError("Content-Length not returned!!")
             
+            
+            lastTimestamp = time.time()
             CHUNK = 16 * 1024
             with open(self.destFilePath, 'wb') as fp:
                 while True:
                     chunk = self.response.read(CHUNK)
                     if not chunk: break
                     fp.write(chunk)
-                    self.downloadCallBack(len(chunk))
+                    
+                    self._received_tmp += len(chunk)
+                    if time.time() - lastTimestamp >= 0.2:
+                        self.downloadCallBack(self._received_tmp)
+                        lastTimestamp = time.time()
+                        self._received_tmp = 0
             
             self.mutex.unlock()
         except SCSError, e:

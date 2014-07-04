@@ -1062,7 +1062,7 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         self.uploadTable.setShowGrid(False)
         self.uploadTable.itemChanged.connect(self.itemChangedAct)
         
-        print '----self.filesPath---------',self.filesPath
+#         print '----self.filesPath---------',self.filesPath
         from urllib2 import unquote
         path = unquote('%s'%self.filesPath[0]).decode('utf8','ignore')
         if os.name == 'nt':
@@ -1154,7 +1154,7 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
                 else:
                     uploadFilePathArray.append(u'%s'%cell.userInfo['filePath'])
             
-        print '======uploadFilePathArray========',uploadFilePathArray
+#         print '======uploadFilePathArray========',uploadFilePathArray
         self.openner.uploadMultiObjectAction(uploadFilePathArray,self.basePath+'/')
         self.hide()
         
@@ -1267,6 +1267,7 @@ class FilesTable(QtGui.QTableWidget):
                 u'<p>失败原因：%s</p>'%errorMsg)
         
     def uploadFileUpdateProgress(self, thread, total, received):
+#         print '====================uploadFileUpdateProgress=========================%d======='%(thread.received*100.0 / thread.total),thread.received,thread.total
         ''' 更新上传进度 '''
         if thread.received*100 / thread.total != 100:
             result = u'上传中(%d%%)'%(thread.received*100 / thread.total)
@@ -1333,11 +1334,15 @@ class FilesTable(QtGui.QTableWidget):
             
             if len(directory) > 0:
                 downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, '%s%s'%(self.currentPrefix,fileName), u'%s/%s'%(directory,os.path.basename(fileName)))
-                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable()'),self.refreshTableList)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),self.downloadFileDidFinished)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),self.downloadFileUpdateProgress)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.downloadFileDidFailed)
                 self.openner.startOperationRunnable(downloadObjectRunnable)
-            
+                
+                self.openner.operationLogTable.updateLogDict({'operation':'download file', 
+                                                             'result':u'处理中',
+                                                             'thread':downloadObjectRunnable})
+    
     def downloadFileUpdateProgress(self, thread, total, received):
         ''' 更新下载进度 '''
         if thread.received*100 / thread.total != 100:
@@ -1354,6 +1359,7 @@ class FilesTable(QtGui.QTableWidget):
                                                              'result':u'完成',
                                                              'thread':thread})
         
+        
     def fileInfoAction(self,event):
         ''' 文件列表右键contextMenu-file info action '''
         fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()#unicode(self.item(self.selectedIndexes()[0].row(), 0).text(),'utf-8','ignore')
@@ -1364,18 +1370,18 @@ class FilesTable(QtGui.QTableWidget):
     def uploadMultiObjectAction(self, filePathArray, basePath):
         ''' 批量上传文件 '''
         self.toBeUploadObjectsArray  = filePathArray
-        print '=====11111========basePath=-------------',basePath
+#         print '=====11111========basePath=-------------',basePath
         if os.name == 'nt':
             basePath = os.path.dirname(basePath)+'/'
 #         else:
 #             basePath = os.path.dirname(os.path.dirname(basePath))+'/'
-        print '=============basePath=-------------',basePath
+#         print '=============basePath=-------------',basePath
         for filePath in self.toBeUploadObjectsArray :
             if os.path.isdir(filePath):
                 dirName = filePath[filePath.find(basePath)+len(basePath):]
                 if os.name == 'nt':
                     dirName = dirName.replace('\\','/')
-                print '=1===isdir(filePath)======',dirName
+#                 print '=1===isdir(filePath)======',dirName
                 createFolderRunnable = CreateFolderRunnable(self.currentBucketName, u'%s%s/'%(self.currentPrefix,dirName), self)
                 createFolderRunnable.filePath = filePath
                 QtCore.QObject.connect(createFolderRunnable.emitter,QtCore.SIGNAL('CreateFolder(PyQt_PyObject)'),self.createMultiFolderDidFinished)
@@ -1391,7 +1397,7 @@ class FilesTable(QtGui.QTableWidget):
                 prefix = u'%s%s'%(self.currentPrefix,os.path.dirname(fName)+'/' if len(os.path.dirname(fName))>0 else '')
                 if cmp(prefix, '/') == 0:
                     prefix = ''
-                print '=2===not isdir(filePath)======',fName,prefix
+#                 print '=2===not isdir(filePath)======',fName,prefix
                 
                 fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, prefix, self)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)

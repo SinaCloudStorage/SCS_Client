@@ -49,12 +49,18 @@ class MainWindow(QtGui.QMainWindow):
         self.threadPool = QtCore.QThreadPool(self)
         self.threadPool.setMaxThreadCount(4)
         
+        self.commonOperationthreadPool = QtCore.QThreadPool(self)
+        self.commonOperationthreadPool.setMaxThreadCount(1)
+        
         self.init()
 
     def startOperationRunnable(self, operationRunnable):
         if operationRunnable is not None :
-            priority = 2 if isinstance(operationRunnable, ListBucketRunnable) or isinstance(operationRunnable, ListDirRunnable) else 0 
-            self.threadPool.start(operationRunnable,priority)
+            if isinstance(operationRunnable, ListBucketRunnable) or isinstance(operationRunnable, ListDirRunnable):
+                self.commonOperationthreadPool.start(operationRunnable)
+            else:
+#             priority = 2 if isinstance(operationRunnable, ListBucketRunnable) or isinstance(operationRunnable, ListDirRunnable) else 0 
+                self.threadPool.start(operationRunnable)
 
     def closeEvent(self, event):
         ''' 关闭事件 '''
