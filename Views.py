@@ -1062,7 +1062,16 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         self.uploadTable.setShowGrid(False)
         self.uploadTable.itemChanged.connect(self.itemChangedAct)
         
+        print '----self.filesPath---------',self.filesPath
         from urllib2 import unquote
+        path = unquote('%s'%self.filesPath[0]).decode('utf8','ignore')
+        if os.name == 'nt':
+            self.basePath = os.path.dirname(path)
+        else:
+            if os.path.isdir(path):
+                self.basePath = os.path.dirname(os.path.dirname(path))
+            else:
+                self.basePath = os.path.dirname(path)
         
         for str in self.filesPath:
             filePath = unquote('%s'%str).decode('utf8','ignore')
@@ -1146,7 +1155,7 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
                     uploadFilePathArray.append(u'%s'%cell.userInfo['filePath'])
             
         print '======uploadFilePathArray========',uploadFilePathArray
-        self.openner.uploadMultiObjectAction(uploadFilePathArray,os.path.dirname(filePath)+'/')
+        self.openner.uploadMultiObjectAction(uploadFilePathArray,self.basePath+'/')
         self.hide()
         
     def checkAllAction(self):
@@ -1355,10 +1364,11 @@ class FilesTable(QtGui.QTableWidget):
     def uploadMultiObjectAction(self, filePathArray, basePath):
         ''' 批量上传文件 '''
         self.toBeUploadObjectsArray  = filePathArray
+        print '=====11111========basePath=-------------',basePath
         if os.name == 'nt':
             basePath = os.path.dirname(basePath)+'/'
-        else:
-            basePath = os.path.dirname(os.path.dirname(basePath))+'/'
+#         else:
+#             basePath = os.path.dirname(os.path.dirname(basePath))+'/'
         print '=============basePath=-------------',basePath
         for filePath in self.toBeUploadObjectsArray :
             if os.path.isdir(filePath):
