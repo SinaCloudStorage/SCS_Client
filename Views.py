@@ -93,11 +93,12 @@ class OperationLogDetail(QtGui.QDialog):
         self.responseGroupBox = QtGui.QGroupBox(u"响应")
         responseCodeNameLabel = QtGui.QLabel(u"<b>响应码:</b>")
         responseCodeLabel = QtGui.QLabel()
-        if self.scsResponse.urllib2Response.code >= 200 and self.scsResponse.urllib2Response.code <= 300:
-            responseCode = '%d'%self.scsResponse.urllib2Response.code
-        else:
-            responseCode = '<font color=red>%d</font>'%self.scsResponse.urllib2Response.code
-        responseCodeLabel.setText(responseCode)
+        if hasattr(self.scsResponse.urllib2Response, 'code') :
+            if self.scsResponse.urllib2Response.code >= 200 and self.scsResponse.urllib2Response.code <= 300:
+                responseCode = '%d'%self.scsResponse.urllib2Response.code
+            else:
+                responseCode = '<font color=red>%d</font>'%self.scsResponse.urllib2Response.code
+            responseCodeLabel.setText(responseCode)
         responseHeaderNameLabel = QtGui.QLabel(u"<b>响应header:</b>")
         responseBodyNameLabel = QtGui.QLabel(u"<b>响应body:</b>")
         self.responseBodyTextEdit = QtGui.QTextEdit()
@@ -117,7 +118,7 @@ class OperationLogDetail(QtGui.QDialog):
         layout.addWidget(responseCodeLabel, 0, 1)
         layout.addWidget(responseHeaderNameLabel, 1, 0)
         rowIdx = 2
-        headers = dict(self.scsResponse.urllib2Response.info())
+        headers = dict(self.scsResponse.urllib2Response.info()) if hasattr(self.scsResponse.urllib2Response, 'info') else {}
         for k, v in headers.iteritems() :
             layout.addWidget(QtGui.QLabel(k), rowIdx, 0)
             layout.addWidget(QtGui.QLabel(v), rowIdx, 1)
