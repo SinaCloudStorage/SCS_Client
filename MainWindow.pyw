@@ -37,8 +37,6 @@ USE_SECURE_CONNECTION = False
 
 import resource
 
-
-
 class MainWindow(QtGui.QMainWindow):
     sequenceNumber = 1
     windowList = []
@@ -51,6 +49,8 @@ class MainWindow(QtGui.QMainWindow):
         
         self.commonOperationthreadPool = QtCore.QThreadPool(self)
         self.commonOperationthreadPool.setMaxThreadCount(1)
+        
+        self.lastOpenPath = ''
         
         self.init()
 
@@ -73,12 +73,15 @@ class MainWindow(QtGui.QMainWindow):
 
     def uploadFile(self):
         ''' 上传文件 '''
-        fileName = QtGui.QFileDialog.getOpenFileName(self)
-        if not fileName:
+        fileNames = QtGui.QFileDialog.getOpenFileNames(self, u'请选择上传文件', self.lastOpenPath)
+        if not fileNames:
             return False
         
+        self.openFilesPath = u'%s'%fileNames[0]
+        basePath = os.path.dirname(self.openFilesPath)
+        
         if self.filesTable :
-            self.filesTable.uploadFile(u'%s'%fileName)#unicode(fileName,'utf-8','ignore'))
+            self.filesTable.uploadMultiObjectAction(fileNames,basePath+'/')
         
     def newfolder(self):
         folderName, ok = QtGui.QInputDialog.getText(self, u"新建目录" if self.filesTable == self.central_widget.currentWidget() else u'新建bucket',

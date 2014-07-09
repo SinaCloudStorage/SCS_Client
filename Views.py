@@ -20,7 +20,7 @@ from sinastorage.utils import rfc822_fmtdate, rfc822_parsedate
 
 from Utils import filesizeformat, bytesFromFilesizeFormat, getFileAmount
 
-from Runnables import (FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
+from Runnables import (BaseRunnable, RunnableState, FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
                        DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
                        CreateFolderRunnable, CreateBucketRunnable)
@@ -155,6 +155,103 @@ class OperationLogTable(QtGui.QTableWidget):
         self.setMinimumHeight(400)
         self.setMinimumWidth(200)
         
+    def contextMenuEvent(self, event):
+        ''' 详细、取消、重试、清空 '''
+        rows=[]
+        for idx in self.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        
+        menu = QtGui.QMenu(self)
+        if len(rowSet) == 1:#单选
+            operDict = OperationLogTable.logArray[self.selectedIndexes()[0].row()]
+            operRunnable = operDict['thread'];
+            
+            ''' 详细信息 '''
+            detailAct = QtGui.QAction(u"详细信息", self,
+                shortcut="Ctrl+D", statusTip=u"查看详细信息",
+                triggered=self.detailAction)
+            menu.addAction(detailAct)
+            if operRunnable.state == RunnableState.WAITING or operRunnable.state == RunnableState.RUNNING :
+                detailAct.setEnabled(False)
+            else:
+                detailAct.setEnabled(True)
+            
+            ''' 取消 '''
+            cancelAct = QtGui.QAction(u"取消操作", self,
+                shortcut="Ctrl+Q", statusTip=u"取消当前操作",
+                triggered=self.cancelAction)
+            menu.addAction(cancelAct)
+            if operRunnable.state == RunnableState.RUNNING:
+                cancelAct.setEnabled(True)
+            else:
+                cancelAct.setEnabled(False)
+            
+            ''' 重试 '''
+            retryAct = QtGui.QAction(u"重试", self,
+                shortcut="Ctrl+R", statusTip=u"重试当前失败的操作",
+                triggered=self.retryAction)
+            menu.addAction(retryAct)
+            if operRunnable.state == RunnableState.DID_FAILED or operRunnable.state == RunnableState.DID_CANCELED:
+                retryAct.setEnabled(True)
+            else:
+                retryAct.setEnabled(False)
+            
+            menu.addSeparator()
+            
+            ''' 清空 '''
+            emptyAct = QtGui.QAction(u"清空列表", self,
+                shortcut="Ctrl+E", statusTip=u"清空历史操作列表",
+                triggered=self.emptyAction)
+            menu.addAction(emptyAct)
+            
+            menu.exec_(event.globalPos())
+        else:#多选
+            print '--------'
+            
+    #  右键事件    
+    def detailAction(self, event):
+        self.showDetailDialog(self.selectedIndexes()[0].row(), 0)
+    
+    def cancelAction(self, event):
+        operDict = OperationLogTable.logArray[self.selectedIndexes()[0].row()]
+        operRunnable = operDict['thread'];
+        if isinstance(operRunnable, FileUploadRunnable) or isinstance(operRunnable, DownloadObjectRunnable):
+            operRunnable.cancel()
+        
+    def retryAction(self, event):
+        operDict = OperationLogTable.logArray[self.selectedIndexes()[0].row()]
+        operRunnable = operDict['thread'];
+        if operRunnable.state == RunnableState.DID_CANCELED or operRunnable.state == RunnableState.DID_FAILED:
+            if isinstance(operRunnable, FileUploadRunnable):
+                fileUploadRunnable = FileUploadRunnable(operRunnable.bucketName, operRunnable.filePath, operRunnable.prefix, operRunnable.parent)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),operRunnable.parent.uploadFileUpdateProgress)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidFinished)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidFailed)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidCanceled)
+                operRunnable.parent.openner.startOperationRunnable(fileUploadRunnable)
+                self.openner.operationLogTable.updateLogDict({'operation':'upload file' if isinstance(operRunnable, FileUploadRunnable) else 'download file', 
+                                                                 'result':u'处理中',
+                                                                 'thread':fileUploadRunnable})
+            else:
+                downloadObjectRunnable = DownloadObjectRunnable(operRunnable.bucketName, operRunnable.key, operRunnable.destFilePath, operRunnable.parent)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),operRunnable.parent.downloadFileDidFinished)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),operRunnable.parent.downloadFileUpdateProgress)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.downloadFileDidFailed)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidCanceled(PyQt_PyObject)'),operRunnable.parent.downloadFileDidCanceled)
+                self.openner.startOperationRunnable(downloadObjectRunnable)
+                
+                self.openner.operationLogTable.updateLogDict({'operation':'download file', 
+                                                             'result':u'处理中',
+                                                             'thread':downloadObjectRunnable})
+            
+            self.openner.operationLogTable.removeOperation(operDict)
+        
+        
+    def emptyAction(self, event):
+        del OperationLogTable.logArray
+        OperationLogTable.logArray = []
+        self.refreshOperationList()
         
     def refreshOperationList(self):
         self.clearContents()
@@ -183,7 +280,14 @@ class OperationLogTable(QtGui.QTableWidget):
         else:
             #TODO:提示稍后
             pass
-        
+    
+    def removeOperation(self, logDict):
+        for idx,dict in enumerate(OperationLogTable.logArray):
+            if logDict['thread'] == dict['thread'] :
+                del OperationLogTable.logArray[idx]
+                break
+        self.refreshOperationList()
+    
     def updateLogDict(self, logDict):
         ''' 更新操作日志 
             {'operation':'upload file', 
@@ -1337,10 +1441,11 @@ class FilesTable(QtGui.QTableWidget):
                     '', options)
             
             if len(directory) > 0:
-                downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, '%s%s'%(self.currentPrefix,fileName), u'%s/%s'%(directory,os.path.basename(fileName)))
+                downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, '%s%s'%(self.currentPrefix,fileName), u'%s/%s'%(directory,os.path.basename(fileName)), self)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),self.downloadFileDidFinished)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),self.downloadFileUpdateProgress)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.downloadFileDidFailed)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidCanceled(PyQt_PyObject)'),self.downloadFileDidCanceled)
                 self.openner.startOperationRunnable(downloadObjectRunnable)
                 
                 self.openner.operationLogTable.updateLogDict({'operation':'download file', 
@@ -1373,7 +1478,11 @@ class FilesTable(QtGui.QTableWidget):
 
     def uploadMultiObjectAction(self, filePathArray, basePath):
         ''' 批量上传文件 '''
-        self.toBeUploadObjectsArray  = filePathArray
+        self.toBeUploadObjectsArray = []
+        if filePathArray and len(filePathArray) > 0:
+            for qfilepath in filePathArray:
+                self.toBeUploadObjectsArray.append(u'%s'%qfilepath)
+        
 #         print '=====11111========basePath=-------------',basePath
         if os.name == 'nt':
             basePath = os.path.dirname(basePath)+'/'
@@ -1407,6 +1516,7 @@ class FilesTable(QtGui.QTableWidget):
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadMultiFileDidFinished)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidFailed)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidCanceled)
                 self.openner.startOperationRunnable(fileUploadRunnable)
                 self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
                                                              'result':u'处理中',
@@ -1459,6 +1569,18 @@ class FilesTable(QtGui.QTableWidget):
         ''' 刷新列表 '''
         if len(self.toBeUploadObjectsArray) == 0:
             self.refreshTableList()
+    
+    def uploadMultiFileDidCanceled(self, runnable, errorMsg):
+        ''' 批量上传文件--手动取消 '''
+        if runnable.filePath in self.toBeUploadObjectsArray:
+            self.toBeUploadObjectsArray.remove(runnable.filePath)
+            
+        self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+                                                             'result':u'取消',
+                                                             'thread':runnable})
+        ''' 刷新列表 '''
+        if len(self.toBeUploadObjectsArray) == 0:
+            self.refreshTableList()
 
     def delMultiObjectAction(self, event):
         ''' 批量删除文件 '''
@@ -1503,6 +1625,7 @@ class FilesTable(QtGui.QTableWidget):
         self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
                                                            'result':u'禁止操作',
                                                            'thread':runnable})
+        runnable.state = RunnableState.FORBIDDEN
         
         ''' 刷新列表 '''
         if len(self.toBeDeleteObjectsArray) == 0:
@@ -1551,6 +1674,8 @@ class FilesTable(QtGui.QTableWidget):
         self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
                                                            'result':u'禁止操作',
                                                            'thread':runnable})
+        runnable.state = RunnableState.FORBIDDEN
+        
         reply = QtGui.QMessageBox.information(self,
                 u"删除object失败", 
                 u'<p>失败原因：%s</p>'%errorMsg)
@@ -1671,6 +1796,10 @@ class FilesTable(QtGui.QTableWidget):
                 u"下载object失败", 
                 u'<p>失败原因：%s</p>'%errorMsg)
         
+    def downloadFileDidCanceled(self, runnable):
+        self.openner.operationLogTable.updateLogDict({'operation':'download file', 
+                                                   'result':u'取消',
+                                                   'thread':runnable})
     
     def refreshTableList(self):
         ''' 刷新当前列表 '''

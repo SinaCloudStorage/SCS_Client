@@ -7,20 +7,34 @@ Created on 2014年6月13日
 from PyQt4 import QtCore, QtGui
 import os, json
 import sinastorage
-from sinastorage.bucket import SCSBucket,ACL, SCSError, KeyNotFound, BadRequest, SCSResponse, SCSListing
-from sinastorage.utils import rfc822_fmtdate, info_dict
+from sinastorage.bucket import SCSBucket,ACL, SCSError, ManualCancel, KeyNotFound, BadRequest, SCSResponse, SCSListing
+from sinastorage.utils import rfc822_fmtdate, info_dict, FileWithCallback
 
 from sinastorage.utils import (rfc822_parsedate)
 from encoding import smart_str, smart_unicode
 
 import time
 
-class FileUploadRunnable(QtCore.QRunnable):
+class RunnableState(object):
+    WAITING = 1
+    RUNNING = 2
+    DID_FINISHED = 3
+    DID_FAILED = 4
+    FORBIDDEN = 5       #禁止操作
+    DID_CANCELED = 6    #取消操作
+
+class BaseRunnable(QtCore.QRunnable):
+    def __init__(self):
+        QtCore.QRunnable.__init__(self)
+        self.state = RunnableState.WAITING
+
+class FileUploadRunnable(BaseRunnable):
     ''' 文件上传 '''
     
     def __init__(self, bucketName, filePath, prefix, parent=None):
         self.emitter = QtCore.QObject()
         QtCore.QRunnable.__init__(self)
+        self.parent = parent
         self.filePath = filePath
         self.bucketName = bucketName
         self.prefix = prefix
@@ -36,18 +50,33 @@ class FileUploadRunnable(QtCore.QRunnable):
     def run(self):
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
-            scsResponse = s.putFile('%s%s'%(self.prefix,os.path.basename(self.filePath)),self.filePath,self.uploadCallBack)
+#             scsResponse = s.putFile('%s%s'%(self.prefix,os.path.basename(self.filePath)),self.filePath,self.uploadCallBack)
+            self.fileWithCallback = FileWithCallback(self.filePath, 'rb', self.uploadCallBack)
+            scsResponse = s.putFileByHeaders('%s%s'%(self.prefix,os.path.basename(self.filePath)), self.fileWithCallback)
             self.response =  scsResponse
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
-            self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("fileUploadDidFinished(PyQt_PyObject)"), self)
+            if isinstance(e, ManualCancel):     #手动取消
+                self.state = RunnableState.DID_CANCELED
+                self.response._responseBody = u'手动取消'
+                self.emitter.emit(QtCore.SIGNAL("fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            else:
+                self.state = RunnableState.DID_FAILED
+                self.response._responseBody = e.data
+                self.emitter.emit(QtCore.SIGNAL("fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("fileUploadDidFinished(PyQt_PyObject)"), self)
         
-class FileInfoRunnable(QtCore.QRunnable):
+    def cancel(self):
+        self.fileWithCallback.cancelRead = True
+        self.state = RunnableState.DID_CANCELED
+        
+class FileInfoRunnable(BaseRunnable):
     ''' 文件信息 '''
     def __init__(self, bucketName, key, parent=None):
         self.emitter = QtCore.QObject()
@@ -59,20 +88,24 @@ class FileInfoRunnable(QtCore.QRunnable):
     def run(self):
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
             scsResponse = s.send(s.request(method="HEAD", key=self.key))
             info = info_dict(dict(scsResponse.urllib2Response.info()))
             scsResponse.close()
             self.response =  scsResponse
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("fileInfoDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("fileInfoRunnable(PyQt_PyObject, PyQt_PyObject)"), self, info)
+            self.state = RunnableState.DID_FAILED
+            self.emitter.emit(QtCore.SIGNAL("fileInfoDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("fileInfoRunnable(PyQt_PyObject, PyQt_PyObject)"), self, info)
         
-class UpdateFileACLRunnable(QtCore.QRunnable):
+class UpdateFileACLRunnable(BaseRunnable):
     ''' 文件信息 '''
     def __init__(self, bucketName, key, acl, parent=None):
         self.emitter = QtCore.QObject()
@@ -85,18 +118,22 @@ class UpdateFileACLRunnable(QtCore.QRunnable):
     def run(self):
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
             scsResponse = s.update_acl(self.key, self.acl)
             self.response =  scsResponse
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("UpdateFileACLDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("UpdateFileACLRunnable(PyQt_PyObject)"), self)
+            self.state = RunnableState.DID_FAILED
+            self.emitter.emit(QtCore.SIGNAL("UpdateFileACLDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("UpdateFileACLRunnable(PyQt_PyObject)"), self)
         
-class ListBucketRunnable(QtCore.QRunnable):
+class ListBucketRunnable(BaseRunnable):
     ''' 列bucket '''
     def __init__(self, parent=None):
         self.emitter = QtCore.QObject()
@@ -111,21 +148,25 @@ class ListBucketRunnable(QtCore.QRunnable):
     def run(self):
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket()
             self.response = s.send(s.request(key=''))
             bucketJsonObj = json.loads(self.response.read())
             self.response.close()
             self.buckets = bucketJsonObj['Buckets']
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("ListBucketRunnableDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            self.state = RunnableState.DID_FAILED
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("ListBucketRunnable(PyQt_PyObject)"), self)
+            self.emitter.emit(QtCore.SIGNAL("ListBucketRunnableDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("ListBucketRunnable(PyQt_PyObject)"), self)
 
 
-class ListDirRunnable(QtCore.QRunnable):
+class ListDirRunnable(BaseRunnable):
     ''' 列目录 '''
     def __init__(self, bucketName, prefix=None, marker=None, limit=None, delimiter=None, parent=None):
         self.emitter = QtCore.QObject()
@@ -140,8 +181,8 @@ class ListDirRunnable(QtCore.QRunnable):
 
     def run(self):
         try:
-            
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
             m = (("prefix", smart_str(self.prefix)),
                  ("marker", self.marker),
@@ -151,16 +192,19 @@ class ListDirRunnable(QtCore.QRunnable):
             args = dict((str(k), str(v)) for (k, v) in m if v is not None)
             self.response = s.send(s.request(key='', args=args))
             self.files_generator = SCSListing.parse(self.response)
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("ListDirDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            self.state = RunnableState.DID_FAILED
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("ListDirRunnable(PyQt_PyObject)"), self)
+            self.emitter.emit(QtCore.SIGNAL("ListDirDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("ListDirRunnable(PyQt_PyObject)"), self)
         
         
-class DeleteObjectRunnable(QtCore.QRunnable):
+class DeleteObjectRunnable(BaseRunnable):
     ''' 删除object ''' 
     def __init__(self, bucketName, key, parent=None):
         self.emitter = QtCore.QObject()
@@ -173,7 +217,7 @@ class DeleteObjectRunnable(QtCore.QRunnable):
     def run(self):
         try:
             self.mutex.lock()
-            
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
             if self.key.rfind('/') == len(self.key)-1 :
                 m = (("prefix", smart_str(self.key)),
@@ -192,16 +236,19 @@ class DeleteObjectRunnable(QtCore.QRunnable):
             
 #             s = SCSBucket(self.bucketName)
             self.response = s.send(s.request(method="DELETE", key=self.key))
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            self.state = RunnableState.DID_FAILED
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("DeleteObjectRunnable(PyQt_PyObject)"), self)
+            self.emitter.emit(QtCore.SIGNAL("DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("DeleteObjectRunnable(PyQt_PyObject)"), self)
         
         
-class DownloadObjectRunnable(QtCore.QRunnable):
+class DownloadObjectRunnable(BaseRunnable):
     ''' 下载Object '''
     def __init__(self, bucketName, key, destFilePath, parent=None):
         self.emitter = QtCore.QObject()
@@ -215,11 +262,18 @@ class DownloadObjectRunnable(QtCore.QRunnable):
         self.total = 0
         
         self._received_tmp = 0
+        
+        self.isAbort = False
         self.mutex = QtCore.QMutex()
         
+    def cancel(self):
+        self.isAbort = True
+        self.state = RunnableState.DID_CANCELED    
+    
     def run(self):
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
             self.response = s[self.key]
             
@@ -229,37 +283,44 @@ class DownloadObjectRunnable(QtCore.QRunnable):
             else:
                 raise ValueError("Content-Length not returned!!")
             
-            
             lastTimestamp = time.time()
             CHUNK = 16 * 1024
             with open(self.destFilePath, 'wb') as fp:
                 while True:
+                    if self.isAbort:
+                        self.state = RunnableState.DID_CANCELED
+                        self.response._responseBody = u'手动取消'
+                        self.emitter.emit(QtCore.SIGNAL("DownloadObjectDidCanceled(PyQt_PyObject)"), self)
+                        return
+                    
                     chunk = self.response.read(CHUNK)
                     if not chunk: break
                     fp.write(chunk)
                     
                     self._received_tmp += len(chunk)
-                    if time.time() - lastTimestamp >= 0.2:
+                    if time.time() - lastTimestamp >= 1.0:
                         self.downloadCallBack(self._received_tmp)
                         lastTimestamp = time.time()
                         self._received_tmp = 0
             
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            self.state = RunnableState.DID_FAILED
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("DownloadObjectRunnable(PyQt_PyObject)"),self)
+            self.emitter.emit(QtCore.SIGNAL("DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.response.close()
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("DownloadObjectRunnable(PyQt_PyObject)"),self)
     
     
     def downloadCallBack(self, received):
         self.received = self.received + received
         self.emitter.emit(QtCore.SIGNAL("FileDownloadProgress(PyQt_PyObject, int, int)"), self, self.total, self.received)
     
-    
-    
-class DeleteBucketRunnable(QtCore.QRunnable):
+class DeleteBucketRunnable(BaseRunnable):
     ''' 删除bucket ''' 
     def __init__(self, bucketName, parent=None):
         self.emitter = QtCore.QObject()
@@ -272,16 +333,20 @@ class DeleteBucketRunnable(QtCore.QRunnable):
         s = SCSBucket(self.bucketName)
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             self.response = s.send(s.request(method="DELETE", key=None))
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("DeleteBucketRunnableDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            self.state = RunnableState.DID_FAILED
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("DeleteBucketRunnable(PyQt_PyObject)"), self)
+            self.emitter.emit(QtCore.SIGNAL("DeleteBucketRunnableDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("DeleteBucketRunnable(PyQt_PyObject)"), self)
 
-class BucketInfoRunnable(QtCore.QRunnable):
+class BucketInfoRunnable(BaseRunnable):
     ''' bucket信息 '''
     def __init__(self, bucketName, parent=None):
         self.emitter = QtCore.QObject()
@@ -292,20 +357,24 @@ class BucketInfoRunnable(QtCore.QRunnable):
     def run(self):
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
             self.response = s.send(s.request(method="GET", key=None, subresource='meta'))
             metaResult = json.loads(self.response.read())
             self.response.close()
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("BucketInfoDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            self.state = RunnableState.DID_FAILED
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("BucketInfoRunnable(PyQt_PyObject, PyQt_PyObject)"), self, metaResult)
+            self.emitter.emit(QtCore.SIGNAL("BucketInfoDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("BucketInfoRunnable(PyQt_PyObject, PyQt_PyObject)"), self, metaResult)
 
 
-class CreateFolderRunnable(QtCore.QRunnable):
+class CreateFolderRunnable(BaseRunnable):
     ''' 创建文件夹 '''
     def __init__(self, bucketName, key, parent=None):
         self.emitter = QtCore.QObject()
@@ -318,19 +387,23 @@ class CreateFolderRunnable(QtCore.QRunnable):
     def run(self):
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
             scsResponse = s.put(self.key,'')
             self.response =  scsResponse
             self.response.close()
-            self.mutex.unlock()
         except SCSError, e:
-            self.emitter.emit(QtCore.SIGNAL("CreateFolderDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            self.state = RunnableState.DID_FAILED
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("CreateFolder(PyQt_PyObject)"), self)
+            self.emitter.emit(QtCore.SIGNAL("CreateFolderDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("CreateFolder(PyQt_PyObject)"), self)
 
-class CreateBucketRunnable(QtCore.QRunnable):
+class CreateBucketRunnable(BaseRunnable):
     ''' 创建bucket '''
     def __init__(self, bucketName, parent=None):
         self.emitter = QtCore.QObject()
@@ -341,16 +414,20 @@ class CreateBucketRunnable(QtCore.QRunnable):
     def run(self):
         try:
             self.mutex.lock()
+            self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
             self.response =  s.put_bucket()
             self.response.close()
-            self.mutex.unlock()
         except SCSError, e:
+            self.state = RunnableState.DID_FAILED
             self.emitter.emit(QtCore.SIGNAL("CreateBucketDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             self.response._responseBody = e.data
-        else:
-            self.emitter.emit(QtCore.SIGNAL("CreateBucket(PyQt_PyObject)"), self)
+            return
+        finally:
+            self.mutex.unlock()
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("CreateBucket(PyQt_PyObject)"), self)
 
 
 
