@@ -308,6 +308,7 @@ class OperationLogTable(QtGui.QTableWidget):
             self.scrollToBottom()
         else:
             self.updateCell(idx, logDict)
+            self.refreshOperationList()
             
     def updateCell(self, rowIdx, logDict):
         ''' 更新指定行内容 '''
@@ -673,7 +674,8 @@ u'RelaxUpload': True,
                 acl[k] = v
         
         updateFileACLRunnable = UpdateFileACLRunnable(self.bucketName, None, acl)
-        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.updateFileACLDidFinished)
+        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.openner.updateFileACLDidFinished)
+        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.openner.updateFileAclDidFailed)
         self.openner.openner.startOperationRunnable(updateFileACLRunnable)
         ''' add oper log'''
         self.openner.openner.operationLogTable.updateLogDict({'operation':'update bucket acl', 
@@ -682,12 +684,6 @@ u'RelaxUpload': True,
         
         self.accept()
     
-    def updateFileACLDidFinished(self, runnable):
-        ''' add oper log'''
-        self.openner.openner.operationLogTable.updateLogDict({'operation':'update bucket acl', 
-                                                    'result':u'完成',
-                                                    'thread':runnable})
-        
 
 class FileInfoDialog(QtGui.QDialog):
     ''' 文件信息对话框 '''
@@ -946,8 +942,8 @@ class FileInfoDialog(QtGui.QDialog):
                 acl[k] = v
         
         updateFileACLRunnable = UpdateFileACLRunnable(self.bucketName, '%s%s'%(self.prefix,self.key), acl)
-        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.updateFileAclDidFinished)
-        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.updateFileAclDidFailed)
+        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.openner.updateFileAclDidFinished)
+        QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.openner.updateFileAclDidFailed)
         self.openner.openner.startOperationRunnable(updateFileACLRunnable)
         ''' add oper log'''
         self.openner.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
@@ -956,18 +952,6 @@ class FileInfoDialog(QtGui.QDialog):
         
         self.accept()
             
-    def updateFileAclDidFinished(self, runnable):
-        ''' add oper log'''
-        self.openner.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
-                                                    'result':u'完成',
-                                                    'thread':runnable})
-    def updateFileAclDidFailed(self, runnable, errorMsg):
-        self.openner.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
-                                                    'result':u'失败',
-                                                    'thread':runnable})
-        reply = QtGui.QMessageBox.information(self,
-                u"更新文件ACL失败", 
-                u'<p>失败原因：%s</p>'%errorMsg)
 
 class BucketTable(QtGui.QTableWidget):
     ''' bucket列表table '''
@@ -1127,6 +1111,21 @@ class BucketTable(QtGui.QTableWidget):
                                                    'thread':runnable})
         reply = QtGui.QMessageBox.information(self,
                 u"获取bucket列表失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
+        
+    ''' bucket 详细窗口 确认按钮 begin '''
+    def updateFileACLDidFinished(self, runnable):
+        ''' add oper log'''
+        self.openner.operationLogTable.updateLogDict({'operation':'update bucket acl', 
+                                                    'result':u'完成',
+                                                    'thread':runnable})
+        
+    def updateFileAclDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'update bucket acl', 
+                                                    'result':u'失败',
+                                                    'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"更新bucket ACL失败", 
                 u'<p>失败原因：%s</p>'%errorMsg)
 
 
@@ -1350,10 +1349,21 @@ class FilesTable(QtGui.QTableWidget):
         
         
         
-        
+    ''' 用于文件详情窗口的更新操作 begin '''    
+    def updateFileAclDidFinished(self, runnable):
+        ''' add oper log'''
+        self.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
+                                                    'result':u'完成',
+                                                    'thread':runnable})
+    def updateFileAclDidFailed(self, runnable, errorMsg):
+        self.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
+                                                    'result':u'失败',
+                                                    'thread':runnable})
+        reply = QtGui.QMessageBox.information(self,
+                u"更新文件ACL失败", 
+                u'<p>失败原因：%s</p>'%errorMsg)
     
-    
-    
+    ''' 用于文件详情窗口的更新操作 end '''  
     
     
     
