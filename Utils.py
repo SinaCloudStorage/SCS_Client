@@ -52,8 +52,87 @@ def getFileAmount(path):
     return count
 
 
+def getValueFromWindowsRegistryByKey(key):
+    ''' 从注册表中根据key取值 '''
+    if cmp(os.name,'nt') == 0:
+        import _winreg
+        
+        regPrefixPath = _winreg.HKEY_CURRENT_USER
+        regSubPath = u'Software\\SCS_client'
+        
+        reg = None
+        try:
+            reg = _winreg.OpenKey(regPrefixPath, regSubPath)
+            return _winreg.QueryValue(reg, key)
+        except EnvironmentError:
+            pass
+        finally:
+            try:
+                if reg: _winreg.CloseKey(reg)
+            except Exception:
+                pass
+    else:
+        print u'current platform is not windows!'
     
+    return None
     
+
+def addKeyValueToWindowsRegistry(key, value):
+    ''' 保存键值对到windows注册表中 '''
+    if cmp(os.name,'nt') == 0:
+        import _winreg
+        
+        regPrefixPath = _winreg.HKEY_CURRENT_USER
+        regSubPath = u'Software\\SCS_client'
+        
+        try:
+            reg = _winreg.OpenKey(regPrefixPath, regSubPath)
+        except EnvironmentError:
+            try:
+                reg = _winreg.CreateKey(regPrefixPath, regSubPath)
+            except:
+                print "*** Unable to register!"
+                return False
+        try:
+            if (_winreg.QueryValue(reg, key) != value):
+                _winreg.DeleteKey(reg, key)
+                _winreg.SetValue(reg, key, _winreg.REG_SZ, value)
+        except Exception ,e:
+            _winreg.SetValue(reg, key, _winreg.REG_SZ, value)
+        
+        try:
+            if reg: _winreg.CloseKey(reg)
+        except Exception:
+            pass
+        
+        return True
+    else:
+        print u'current platform is not windows!'
+    
+    return False
+
+
+def removeKeyFromWindowsRegistry(key):
+    ''' 从windows注册表中删除键值对 '''
+    if cmp(os.name,'nt') == 0:
+        import _winreg
+        
+        regPrefixPath = _winreg.HKEY_CURRENT_USER
+        regSubPath = u'Software\\SCS_client'
+        
+        try:
+            reg = _winreg.OpenKey(regPrefixPath, regSubPath)
+            _winreg.DeleteKey(reg, key)
+            _winreg.CloseKey(reg)
+        except EnvironmentError:
+            pass
+        
+        return True
+    else:
+        print u'current platform is not windows!'
+    
+    return False
+
     
     
     

@@ -18,7 +18,9 @@ import sinastorage
 from sinastorage.bucket import SCSBucket,ACL, SCSError, KeyNotFound, BadRequest, SCSResponse
 from sinastorage.utils import rfc822_fmtdate, rfc822_parsedate
 
-from Utils import filesizeformat, bytesFromFilesizeFormat, getFileAmount
+from Utils import (filesizeformat, bytesFromFilesizeFormat, getFileAmount, 
+                   getValueFromWindowsRegistryByKey, addKeyValueToWindowsRegistry,
+                   removeKeyFromWindowsRegistry)
 
 from Runnables import (BaseRunnable, RunnableState, FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
@@ -335,7 +337,10 @@ class LoginWindow(QtGui.QWidget):
         self.accessKeyEdit = QtGui.QLineEdit()
         self.accessKeyEdit.setText('')
         layout.addWidget(self.accessKeylabel, 0, 0)
-        layout.addWidget(self.accessKeyEdit, 0, 1)
+        layout.addWidget(self.accessKeyEdit, 0, 1, 1, 2)
+        
+        accessKey = getValueFromWindowsRegistryByKey(u'accessKey')
+        if accessKey : self.accessKeyEdit.setText(accessKey)
         
         self.accessSecretlabel = QtGui.QLabel("Access Secret:")
         self.accessSecretEdit = QtGui.QLineEdit()
@@ -343,14 +348,23 @@ class LoginWindow(QtGui.QWidget):
         layout.addWidget(self.accessSecretlabel, 1, 0)
         layout.addWidget(self.accessSecretEdit, 1, 1)
         
+        isSaveSecret = getValueFromWindowsRegistryByKey(u'isSaveSecret')
+        accessSecret = getValueFromWindowsRegistryByKey(u'accessSecret')
+        
+        self.saveSecretCheckBox = QtGui.QCheckBox(u"记住secret")
+        self.saveSecretCheckBox.setChecked(False)
+        layout.addWidget(self.saveSecretCheckBox, 1, 2)
+        
+        if cmp('1',isSaveSecret)==0 and accessSecret is not None: 
+            self.saveSecretCheckBox.setChecked(True)
+            self.accessSecretEdit.setText(accessSecret)
+            
         self.isSecureConnectionCheckBox = QtGui.QCheckBox(u"使用https加密连接")
         self.isSecureConnectionCheckBox.setChecked(True)
         layout.addWidget(self.isSecureConnectionCheckBox, 2, 1)
 
         self.startButton = QtGui.QPushButton(u"登录")
-        '''TODO: 回车'''
-#         self.startButton.shortcut()
-        self.startButton.clicked.connect(self.openner.loginBtnAction)
+        self.startButton.clicked.connect(self.loginAction)
         layout.addWidget(self.startButton, 3, 0)
         
         self.loginGroup.setLayout(layout)
@@ -363,6 +377,14 @@ class LoginWindow(QtGui.QWidget):
         layout.addWidget(self.loginGroup)
         
         self.setLayout(layout)
+        
+    def keyPressEvent(self, event):
+        ''' 回车键登录 '''
+        if event.key() == QtCore.Qt.Key_Return: 
+            self.loginAction()
+            
+    def loginAction(self):
+        self.openner.loginBtnAction()
 
 
 class BucketInfoDialog(QtGui.QDialog):

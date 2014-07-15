@@ -17,6 +17,11 @@ from Views import FileInfoDialog, LoginWindow, OperationLogTable, FilesTable, Bu
 
 import sinastorage
 
+from Utils import (filesizeformat, bytesFromFilesizeFormat, getFileAmount, 
+                   getValueFromWindowsRegistryByKey, addKeyValueToWindowsRegistry,
+                   removeKeyFromWindowsRegistry)
+
+
 from Runnables import (FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
                        DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
@@ -278,6 +283,18 @@ class MainWindow(QtGui.QMainWindow):
         self.operationLogTable.updateLogDict({'operation':'list bucket', 
                                                    'result':u'完成',
                                                    'thread':runnable})
+        
+        ''' 登录成功，保存登录信息 '''
+        addKeyValueToWindowsRegistry(u'accessKey',u'%s'%self.loginWindow.accessKeyEdit.text())
+        
+        if self.loginWindow.saveSecretCheckBox.isChecked():
+            addKeyValueToWindowsRegistry(u'accessSecret',u'%s'%self.loginWindow.accessSecretEdit.text())
+            addKeyValueToWindowsRegistry(u'isSaveSecret',u'1')
+        else:
+            removeKeyFromWindowsRegistry(u'accessSecret')
+            removeKeyFromWindowsRegistry(u'isSaveSecret')
+        
+        
         
         self.central_widget.addWidget(self.bucketsTable)
         self.showBuckets(runnable.bucketIter())
