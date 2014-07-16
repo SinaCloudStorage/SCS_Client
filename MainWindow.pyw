@@ -22,7 +22,7 @@ from Utils import (filesizeformat, bytesFromFilesizeFormat, getFileAmount,
                    removeKeyFromWindowsRegistry)
 
 
-from Runnables import (FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
+from Runnables import (RunnableState, FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
                        DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
                        CreateFolderRunnable, CreateBucketRunnable)
@@ -57,15 +57,29 @@ class MainWindow(QtGui.QMainWindow):
         
         self.lastOpenPath = ''
         
+        self.runnables = []     #保存所有上传、下载的runnable列表
+        
         self.init()
 
     def startOperationRunnable(self, operationRunnable):
         if operationRunnable is not None :
-            if isinstance(operationRunnable, ListBucketRunnable) or isinstance(operationRunnable, ListDirRunnable):
-                self.commonOperationthreadPool.start(operationRunnable)
-            else:
-#             priority = 2 if isinstance(operationRunnable, ListBucketRunnable) or isinstance(operationRunnable, ListDirRunnable) else 0 
+            if isinstance(operationRunnable, FileUploadRunnable) or isinstance(operationRunnable, DownloadObjectRunnable):
+                
+                if isinstance(operationRunnable, DownloadObjectRunnable):
+                    #检查是否有相同tmpFilePath的正在执行的runnable
+                    for runnable in self.runnables:
+                        if isinstance(runnable, DownloadObjectRunnable) and cmp(runnable.tmpFilePath, operationRunnable.tmpFilePath)==0 and (runnable.state == RunnableState.WAITING or runnable.state == RunnableState.RUNNING) :
+                            QtGui.QMessageBox.information(self, u"操作取消", u'<p>有相同的下载任务正在执行，请稍后再试。</p>')
+                            return False
+                
                 self.threadPool.start(operationRunnable)
+                self.runnables.append(operationRunnable)
+            else:
+                self.commonOperationthreadPool.start(operationRunnable)
+        else:
+            return False
+        
+        return True
 
     def closeEvent(self, event):
         ''' 关闭事件 '''
@@ -74,6 +88,12 @@ class MainWindow(QtGui.QMainWindow):
 #         else:
 #             event.ignore()
 #         event.accept()
+
+        ''' 停止所有下载线程 '''
+        for runnable in self.runnables:
+            if runnable.state == RunnableState.WAITING or runnable.state == RunnableState.RUNNING :
+                runnable.cancel()
+
         QtGui.qApp.closeAllWindows()
 
     def uploadFile(self):

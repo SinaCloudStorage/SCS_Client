@@ -250,18 +250,18 @@ class DeleteObjectRunnable(BaseRunnable):
         
 class DownloadObjectRunnable(BaseRunnable):
     ''' 下载Object '''
-    def __init__(self, bucketName, key, destFilePath, parent=None):
+    def __init__(self, bucketName, key, fileMD5, destFilePath, tmpFilePath, parent=None):
         self.emitter = QtCore.QObject()
         QtCore.QRunnable.__init__(self)
         self.bucketName = bucketName
         self.key = key
-        self.destFilePath = destFilePath
+        self.fileMD5 = fileMD5
+        self.destFilePath = destFilePath    #下载完成后重命名至该文件路径
+        self.tmpFilePath = tmpFilePath      #用于断点续传的临时文件路径
         self.parent = parent
         
-        self.received = 0
-        self.total = 0
-        
-        self._received_tmp = 0
+        self.received = 0                   #已下载byte数量
+        self.total = 0                      #文件总大小
         
         self.isAbort = False
         self.mutex = QtCore.QMutex()
@@ -275,17 +275,36 @@ class DownloadObjectRunnable(BaseRunnable):
             self.mutex.lock()
             self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
-            self.response = s[self.key]
+#             self.response = s[self.key]
+
+            headers = {}
+            ''' 若文件存在，则received等于已下载的文件大小 '''
+            if os.path.exists(self.tmpFilePath):
+                self.received = os.stat(self.tmpFilePath).st_size
+                headers['If-Range'] = u'"%s"'%self.fileMD5
+                headers['Range'] = u'bytes=%d-'%self.received
             
+            self.response = s.send(s.request(key=self.key,headers=headers))
+            
+            statusCode = getattr(self.response.urllib2Response, "code", None)
             responseHeaders = dict(self.response.urllib2Response.info())
-            if "content-length" in responseHeaders:
-                self.total = int(responseHeaders["content-length"])
-            else:
-                raise ValueError("Content-Length not returned!!")
+            if statusCode == 200:
+                if "content-length" in responseHeaders:
+                    self.total = int(responseHeaders["content-length"])
+                else:
+                    raise ValueError("Content-Length not returned!!")
+            elif statusCode == 206:
+                ''' 用于断点续传时获取文件总大小 '''
+                if "content-range" in responseHeaders:
+                    content_range = responseHeaders["content-range"]
+                    self.total = int(content_range[content_range.rfind('/')+1:])
+                else:
+                    raise ValueError("Content-Length not returned!!")
             
             lastTimestamp = time.time()
             CHUNK = 16 * 1024
-            with open(self.destFilePath, 'wb') as fp:
+            _received_tmp = 0              #内部临时变量
+            with open(self.tmpFilePath, 'ab') as fp:
                 while True:
                     if self.isAbort:
                         self.state = RunnableState.DID_CANCELED
@@ -297,11 +316,11 @@ class DownloadObjectRunnable(BaseRunnable):
                     if not chunk: break
                     fp.write(chunk)
                     
-                    self._received_tmp += len(chunk)
+                    _received_tmp += len(chunk)
                     if time.time() - lastTimestamp >= 1.0:
-                        self.downloadCallBack(self._received_tmp)
+                        self.downloadCallBack(_received_tmp)
                         lastTimestamp = time.time()
-                        self._received_tmp = 0
+                        _received_tmp = 0
             
         except SCSError, e:
             self.state = RunnableState.DID_FAILED
@@ -312,6 +331,11 @@ class DownloadObjectRunnable(BaseRunnable):
         finally:
             self.response.close()
             self.mutex.unlock()
+        
+        #将tmpFilePath重命名为 destFilePath
+        if os.path.exists(self.destFilePath): os.remove(self.destFilePath)
+        os.rename(self.tmpFilePath, self.destFilePath)
+        
         self.state = RunnableState.DID_FINISHED
         self.emitter.emit(QtCore.SIGNAL("DownloadObjectRunnable(PyQt_PyObject)"),self)
     

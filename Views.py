@@ -239,18 +239,19 @@ class OperationLogTable(QtGui.QTableWidget):
                                                                      'result':u'处理中',
                                                                      'thread':fileUploadRunnable})
                 else:
-                    downloadObjectRunnable = DownloadObjectRunnable(operRunnable.bucketName, operRunnable.key, operRunnable.destFilePath, operRunnable.parent)
+                    downloadObjectRunnable = DownloadObjectRunnable(operRunnable.bucketName, operRunnable.key, operRunnable.fileMD5, operRunnable.destFilePath, operRunnable.tmpFilePath, operRunnable.parent)
                     QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),operRunnable.parent.downloadFileDidFinished)
                     QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),operRunnable.parent.downloadFileUpdateProgress)
                     QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.downloadFileDidFailed)
                     QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidCanceled(PyQt_PyObject)'),operRunnable.parent.downloadFileDidCanceled)
-                    self.openner.startOperationRunnable(downloadObjectRunnable)
+                    result = self.openner.startOperationRunnable(downloadObjectRunnable)
                     
-                    self.openner.operationLogTable.updateLogDict({'operation':'download file', 
-                                                                 'result':u'处理中',
-                                                                 'thread':downloadObjectRunnable})
+                    if result:
+                        self.openner.operationLogTable.updateLogDict({'operation':'download file', 
+                                                                     'result':u'处理中',
+                                                                     'thread':downloadObjectRunnable})
                 
-                self.openner.operationLogTable.removeOperation(operDict)
+                        self.openner.operationLogTable.removeOperation(operDict)
         
         
     def emptyAction(self, event):
@@ -291,7 +292,8 @@ class OperationLogTable(QtGui.QTableWidget):
             if logDict['thread'] == dict['thread'] :
                 del OperationLogTable.logArray[idx]
                 break
-        self.refreshOperationList()
+#         self.refreshOperationList()
+        self.removeRow(idx)
     
     def updateLogDict(self, logDict):
         ''' 更新操作日志 
@@ -313,7 +315,7 @@ class OperationLogTable(QtGui.QTableWidget):
             self.scrollToBottom()
         else:
             self.updateCell(idx, logDict)
-            self.refreshOperationList()
+#             self.refreshOperationList()
             
     def updateCell(self, rowIdx, logDict):
         ''' 更新指定行内容 '''
@@ -1561,6 +1563,7 @@ class FilesTable(QtGui.QTableWidget):
         
         for rowNum in rowSet:
             fileName = u'%s'%self.item(rowNum, 0).text()
+            fileMD5 = u'%s'%self.item(rowNum, 3).text()
             localFileName = fileName        #待保存到本地的文件名
             
             options = QtGui.QFileDialog.DontResolveSymlinks | QtGui.QFileDialog.ShowDirsOnly
@@ -1583,30 +1586,31 @@ class FilesTable(QtGui.QTableWidget):
                     btnIdx = msgBox.exec_()
                     if btnIdx == 0:
                         pass            #覆盖
-                    elif btnIdx == 1:
-                        print u'----------并存'
-                        ''' TODO: 找可用的文件名 '''
+                    elif btnIdx == 1:   #并存
+                        ''' 找可用的文件名 '''
                         localFileName = renameFileByPath(u'%s'%directory, localFileName)
-                        
-#                         localFileName = u'%s(1)%s'%(os.path.splitext(localFileName)[0],
-#                                                     os.path.splitext(localFileName)[1] if len(os.path.splitext(localFileName))>1 else '')
-                    else:
+                    else:               #取消
                         return
+                
+                tmpFilePath = os.path.join(u'%s'%directory,u'%s_%s.tmp'%(fileName, fileMD5))
                 
                 downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, 
                                                                 '%s%s'%(self.currentPrefix,fileName),
+                                                                fileMD5,
                                                                 os.path.join(u'%s'%directory,localFileName), 
+                                                                tmpFilePath,
                                                                 self)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),self.downloadFileDidFinished)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),self.downloadFileUpdateProgress)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.downloadFileDidFailed)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidCanceled(PyQt_PyObject)'),self.downloadFileDidCanceled)
-                self.openner.startOperationRunnable(downloadObjectRunnable)
+                result = self.openner.startOperationRunnable(downloadObjectRunnable)
                 
-                self.openner.operationLogTable.updateLogDict({'operation':'download file', 
-                                                             'result':u'处理中',
-                                                             'thread':downloadObjectRunnable})
-    
+                if result:
+                    self.openner.operationLogTable.updateLogDict({'operation':'download file', 
+                                                                 'result':u'处理中',
+                                                                 'thread':downloadObjectRunnable})
+                
     def downloadFileUpdateProgress(self, thread, total, received):
         ''' 更新下载进度 '''
         if thread.received*100 / thread.total != 100:
