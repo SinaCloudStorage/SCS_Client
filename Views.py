@@ -20,7 +20,7 @@ from sinastorage.utils import rfc822_fmtdate, rfc822_parsedate
 
 from Utils import (filesizeformat, bytesFromFilesizeFormat, getFileAmount, 
                    getValueFromWindowsRegistryByKey, addKeyValueToWindowsRegistry,
-                   removeKeyFromWindowsRegistry)
+                   removeKeyFromWindowsRegistry, renameFileByPath)
 
 from Runnables import (BaseRunnable, RunnableState, FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
@@ -1560,7 +1560,8 @@ class FilesTable(QtGui.QTableWidget):
         rowSet = set(rows)
         
         for rowNum in rowSet:
-            fileName = u'%s'%self.item(rowNum, 0).text()#unicode(self.item(rowNum, 0).text(),'utf-8','ignore')
+            fileName = u'%s'%self.item(rowNum, 0).text()
+            localFileName = fileName        #待保存到本地的文件名
             
             options = QtGui.QFileDialog.DontResolveSymlinks | QtGui.QFileDialog.ShowDirsOnly
             directory = QtGui.QFileDialog.getExistingDirectory(self,
@@ -1568,7 +1569,34 @@ class FilesTable(QtGui.QTableWidget):
                     '', options)
             
             if len(directory) > 0:
-                downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, '%s%s'%(self.currentPrefix,fileName), u'%s/%s'%(directory,os.path.basename(fileName)), self)
+                ''' 检查当前目录是否存在同名文件 '''
+                if os.path.exists(os.path.join(u'%s'%directory,fileName)):
+                    msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning,
+                                               u"文件已存在", 
+                                               u'<p>当前目录存在相同文件名！</p>',
+                                               QtGui.QMessageBox.NoButton, self)
+                    
+                    msgBox.addButton(u"覆盖", QtGui.QMessageBox.HelpRole)
+                    msgBox.addButton(u"并存", QtGui.QMessageBox.ActionRole)
+                    msgBox.addButton(u"取消", QtGui.QMessageBox.RejectRole)
+                    
+                    btnIdx = msgBox.exec_()
+                    if btnIdx == 0:
+                        pass            #覆盖
+                    elif btnIdx == 1:
+                        print u'----------并存'
+                        ''' TODO: 找可用的文件名 '''
+                        localFileName = renameFileByPath(u'%s'%directory, localFileName)
+                        
+#                         localFileName = u'%s(1)%s'%(os.path.splitext(localFileName)[0],
+#                                                     os.path.splitext(localFileName)[1] if len(os.path.splitext(localFileName))>1 else '')
+                    else:
+                        return
+                
+                downloadObjectRunnable = DownloadObjectRunnable(self.currentBucketName, 
+                                                                '%s%s'%(self.currentPrefix,fileName),
+                                                                os.path.join(u'%s'%directory,localFileName), 
+                                                                self)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),self.downloadFileDidFinished)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),self.downloadFileUpdateProgress)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.downloadFileDidFailed)

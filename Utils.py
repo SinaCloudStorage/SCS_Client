@@ -51,6 +51,18 @@ def getFileAmount(path):
 
     return count
 
+def renameFileByPath(localPath, fileName, suffix=0):
+    ''' 判断localPath路径下是否有重名文件，若存在，则重命名当前文件 '''
+    renamedFileName = fileName if suffix==0 else u'%s(%d)%s'%(os.path.splitext(fileName)[0], suffix,
+                                                    os.path.splitext(fileName)[1] if len(os.path.splitext(fileName))>1 else '')
+    
+    if os.path.exists(os.path.join(localPath, renamedFileName)) :
+        suffix += 1
+        return renameFileByPath(localPath, fileName, suffix)
+    
+    return renamedFileName
+    
+
 
 def getValueFromWindowsRegistryByKey(key):
     ''' 从注册表中根据key取值 '''
