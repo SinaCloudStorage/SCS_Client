@@ -7,7 +7,8 @@ Created on 2014年6月13日
 from PyQt4 import QtCore, QtGui
 import os, json
 import sinastorage
-from sinastorage.bucket import SCSBucket,ACL, SCSError, ManualCancel, KeyNotFound, BadRequest, SCSResponse, SCSListing
+from sinastorage.bucket import (SCSBucket,ACL, SCSError, ManualCancel, 
+                                KeyNotFound, BadRequest, SCSResponse, SCSListing, _upload_part_by_fileWithCallback)
 from sinastorage.utils import rfc822_fmtdate, info_dict, FileWithCallback
 
 from sinastorage.utils import (rfc822_parsedate)
@@ -28,9 +29,8 @@ class BaseRunnable(QtCore.QRunnable):
         QtCore.QRunnable.__init__(self)
         self.state = RunnableState.WAITING
 
-class FileUploadRunnable(BaseRunnable):
-    ''' 文件上传 '''
-    
+class FileMultipartUploadRunnable(BaseRunnable):
+    ''' 文件分片上传 '''
     def __init__(self, bucketName, filePath, prefix, parent=None):
         self.emitter = QtCore.QObject()
         QtCore.QRunnable.__init__(self)
@@ -42,17 +42,146 @@ class FileUploadRunnable(BaseRunnable):
         self.total = 0
         self.received = 0
         
+        self.multipart = None                   #分片上传结果
+        self.source_size = os.stat(self.filePath).st_size
+        
+        '''操作列表，用于显示操作详情
+            {u'response':scsResponse,
+             u'operation_name':u'合并分片',
+             u'result':u'完成'}
+        '''
+        self.operationList = []
+        
+    def multipartUploadCallBack(self, upload_id, part_num, total, received):
+        self.received += received
+        
+        ''' 顺序上传, 进度=当前分片数/总分片数*当前分片百分比 '''
+        self.emitter.emit(QtCore.SIGNAL("fileUploadProgress(PyQt_PyObject, int, int)"), 
+                          self, 
+                          self.source_size, 
+                          self.received)
+        
+    def multipartUpload(self):
+        try:
+            self.mutex.lock()
+            self.state = RunnableState.RUNNING
+            
+            self.useMultipartUpload = True
+            
+            import math
+            from sinastorage.multipart import FileChunkWithCallback
+            min_bytes_per_chunk = 5 * 1024 * 1024                     #每片分片最大文件大小
+            s = SCSBucket(self.bucketName)
+
+            keyName = '%s%s'%(self.prefix,os.path.basename(self.filePath))
+            self.multipart = s.initiate_multipart_upload(keyName, acl=None, metadata={}, 
+                                                    mimetype=None, headers={})
+            
+            self.operationList.append({u'response':self.multipart.init_multipart_response,
+                                       u'operation_name':u'初始化分片上传',
+                                       u'result':u'完成'})
+            
+            bytes_per_chunk = max(int(math.sqrt(min_bytes_per_chunk) * math.sqrt(self.source_size)),
+                                  min_bytes_per_chunk)
+            chunk_amount = int(math.ceil(self.source_size / float(bytes_per_chunk)))
+            self.multipart.bytes_per_part = bytes_per_chunk
+            self.multipart.parts_amount = chunk_amount
+            
+            i = 0
+            for part in self.multipart.get_next_part():
+                if self.state == RunnableState.DID_CANCELED:
+                    raise sinastorage.bucket.ManualCancel('operation abort')
+                offset = i * bytes_per_chunk
+                remaining_bytes = self.source_size - offset
+                chunk_bytes = min([bytes_per_chunk, remaining_bytes])
+                
+                self._current_fileChunkWithCallback = FileChunkWithCallback(self.filePath, 'rb', offset=offset,
+                                                                            bytes=chunk_bytes, cb=self.multipartUploadCallBack, 
+                                                                            upload_id=self.multipart.upload_id, part_num=part.part_num)
+    
+                try:
+                    part_result = _upload_part_by_fileWithCallback(self.bucketName, keyName, 
+                                                                   self.multipart, part, 
+                                                                   self._current_fileChunkWithCallback, None)
+                    self.multipart.parts.append(part_result)
+                    
+                    self.operationList.append({u'response':part_result.response,
+                                       u'operation_name':u'分片上传%d'%part_result.part_num,
+                                       u'result':u'完成'})
+                    
+                finally:
+                    self._current_fileChunkWithCallback.close()
+                
+                i = i + 1
+                
+            if len(self.multipart.parts) == chunk_amount:
+                scsResponse = s.complete_multipart_upload(self.multipart)
+                self.multipart.complete_multipart_response = scsResponse
+                self.operationList.append({u'response':scsResponse,
+                                       u'operation_name':u'合并分片',
+                                       u'result':u'完成'})
+    #             key = s.get_key(keyName)
+    #             key.set_acl(acl)
+            else:
+                print  len(self.multipart.parts) , chunk_amount
+                raise RuntimeError("multipart upload is failed!!")
+        except SCSError, e:
+            self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
+            if isinstance(e, ManualCancel):     #手动取消
+                self.state = RunnableState.DID_CANCELED
+                self.response._responseBody = u'手动取消'
+                self.emitter.emit(QtCore.SIGNAL("fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            else:
+                self.state = RunnableState.DID_FAILED
+                self.response._responseBody = e.data
+                self.emitter.emit(QtCore.SIGNAL("fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
+            return
+        finally:
+            self.mutex.unlock()
+            
+        self.state = RunnableState.DID_FINISHED
+        self.emitter.emit(QtCore.SIGNAL("fileUploadDidFinished(PyQt_PyObject)"), self)
+    
+    def run(self):
+        self.multipartUpload()
+        
+    def cancel(self):
+        self.state = RunnableState.DID_CANCELED
+        self._current_fileChunkWithCallback.cancelRead = True
+        print '========cancel============='
+        
+
+class FileUploadRunnable(BaseRunnable):
+    ''' 文件上传 '''
+    def __init__(self, bucketName, filePath, prefix, parent=None):
+        self.emitter = QtCore.QObject()
+        QtCore.QRunnable.__init__(self)
+        self.parent = parent
+        self.filePath = filePath
+        self.bucketName = bucketName
+        self.prefix = prefix
+        self.mutex = QtCore.QMutex()
+        self.total = 0
+        self.received = 0
+        
+        self.useMultipartUpload = False         #是否使用分片上传
+        self.multipart = None                   #分片上传结果
+        
+        self.source_size = os.stat(self.filePath).st_size
+        
+        
     def uploadCallBack(self, total, uploaded):
         self.total = total
         self.received = self.received + uploaded
         self.emitter.emit(QtCore.SIGNAL("fileUploadProgress(PyQt_PyObject, int, int)"), self, self.total, self.received)
     
-    def run(self):
+    def upload(self):
+        ''' 普通上传 '''
         try:
             self.mutex.lock()
             self.state = RunnableState.RUNNING
+            
             s = SCSBucket(self.bucketName)
-#             scsResponse = s.putFile('%s%s'%(self.prefix,os.path.basename(self.filePath)),self.filePath,self.uploadCallBack)
             self.fileWithCallback = FileWithCallback(self.filePath, 'rb', self.uploadCallBack)
             scsResponse = s.putFileByHeaders('%s%s'%(self.prefix,os.path.basename(self.filePath)), self.fileWithCallback)
             self.response =  scsResponse
@@ -68,13 +197,22 @@ class FileUploadRunnable(BaseRunnable):
                 self.emitter.emit(QtCore.SIGNAL("fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
             return
         finally:
+            self.fileWithCallback.close()
             self.mutex.unlock()
+            
         self.state = RunnableState.DID_FINISHED
         self.emitter.emit(QtCore.SIGNAL("fileUploadDidFinished(PyQt_PyObject)"), self)
         
+    
+    def run(self):
+        self.upload()
+        
     def cancel(self):
-        self.fileWithCallback.cancelRead = True
         self.state = RunnableState.DID_CANCELED
+        if self.useMultipartUpload:
+            pass
+        else:
+            self.fileWithCallback.cancelRead = True
         
 class FileInfoRunnable(BaseRunnable):
     ''' 文件信息 '''
@@ -455,10 +593,30 @@ class CreateBucketRunnable(BaseRunnable):
 
 
 
+class CheckNewVersionRunnable(QtCore.QRunnable):
+    ''' 检查新版本 '''
+    def __init__(self):
+        QtCore.QRunnable.__init__(self)
+        self.emitter = QtCore.QObject()
+        self.mutex = QtCore.QMutex()
+        self.versionDict = {}
 
-
-
-
+    def run(self):
+        try:
+            self.mutex.lock()
+            import urllib2
+            response = urllib2.urlopen('http://sinastorage.com/sdk/SCS-Client-Win7/check_version.json', timeout=10)
+            '''
+                {
+                    "version_name": "v1.0",
+                    "version_code": "1",
+                    "download_url": "http://open.sinastorage.com"
+                }
+            '''
+            self.versionDict = json.loads(response.read())
+        finally:
+            self.mutex.unlock()
+        self.emitter.emit(QtCore.SIGNAL("CheckNewVersion(PyQt_PyObject)"), self.versionDict)
 
 
         

@@ -25,7 +25,7 @@ from Utils import (filesizeformat, bytesFromFilesizeFormat, getFileAmount,
 from Runnables import (RunnableState, FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
                        DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
-                       CreateFolderRunnable, CreateBucketRunnable)
+                       CreateFolderRunnable, CreateBucketRunnable,CheckNewVersionRunnable)
 
 MAX_WINDOW_SIZE_WIDTH = 800
 MAX_WINDOW_SIZE_HIGHT = 600
@@ -34,6 +34,9 @@ USER_ACCESS_KEY      = ''
 USER_ACCESS_SECRET   = ''
 
 USE_SECURE_CONNECTION = False
+
+VERSION_CODE = 1
+VERSION_NAME = u'v0.0.1'
 
 # try:
 #     import sdi_rc3
@@ -60,6 +63,8 @@ class MainWindow(QtGui.QMainWindow):
         self.runnables = []     #保存所有上传、下载的runnable列表
         
         self.init()
+        
+        self.checkNewVersion()
 
     def startOperationRunnable(self, operationRunnable):
         if operationRunnable is not None :
@@ -330,6 +335,26 @@ class MainWindow(QtGui.QMainWindow):
         reply = QtGui.QMessageBox.information(self,
                 u"登录失败", 
                 u'<p>登录失败</p><p>请检查Access Key和Access Secrect是否正确</p>')
+                
+    def checkNewVersion(self):
+        checkNewVersionRunnable = CheckNewVersionRunnable()
+        QtCore.QObject.connect(checkNewVersionRunnable.emitter,QtCore.SIGNAL('CheckNewVersion(PyQt_PyObject)'),self.checkVersionResult)
+        self.startOperationRunnable(checkNewVersionRunnable)
+                
+    def checkVersionResult(self, verDict):
+        '''
+            {
+                "version_name": "v1.0",
+                "version_code": 1,
+                "download_url": "http://open.sinastorage.com"
+            }
+        '''
+        if verDict['version_code'] > VERSION_CODE:
+            reply = QtGui.QMessageBox.information(self,
+                u"发现新版本", 
+                u'<p>发现新版本</p><p>点击进行下载<a href=%s>%s</p>'%(verDict['download_url'],verDict['version_name']))
+        
+        
                 
 if __name__ == '__main__':
     import sys

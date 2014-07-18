@@ -12,8 +12,6 @@ sip.setapi('QVariant', 2)
 import os
 from PyQt4 import QtCore, QtGui
 
-from sinastorage.bucket import ACL
-
 import sinastorage
 from sinastorage.bucket import SCSBucket,ACL, SCSError, KeyNotFound, BadRequest, SCSResponse
 from sinastorage.utils import rfc822_fmtdate, rfc822_parsedate
@@ -25,9 +23,182 @@ from Utils import (filesizeformat, bytesFromFilesizeFormat, getFileAmount,
 from Runnables import (BaseRunnable, RunnableState, FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
                        DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
-                       CreateFolderRunnable, CreateBucketRunnable)
+                       CreateFolderRunnable, CreateBucketRunnable, FileMultipartUploadRunnable)
 
 global USE_HTTPS_CONNECTION
+
+class OperationLogDetailForMultipartUpload(QtGui.QDialog):
+    ''' 用于显示分片上传操作的详细页面 '''
+    def __init__(self, multipartRunnable, parent=None):
+        super(OperationLogDetailForMultipartUpload, self).__init__(parent)
+        self.multipartRunnable = multipartRunnable
+        self.openner = parent
+        
+        self.mainLayout = QtGui.QGridLayout()
+        
+        self.initSubUploadTableLayout()
+        self.showRequestLayout(None)
+        self.showRsponseLayout(None)
+        
+        self.mainLayout.addWidget(self.subUploadTable, 0, 0, 2, 1)
+        self.mainLayout.addWidget(self.requestGroupBox, 0, 1)
+        self.mainLayout.addWidget(self.responseGroupBox, 1, 1)
+        
+        self.setLayout(self.mainLayout)
+        
+        self.setMinimumHeight(700)
+        
+        self.subUploadTable.selectRow(0)
+    
+    def showDetail(self):
+        row = self.subUploadTable.selectedIndexes()[0].row()
+        respDict = self.multipartRunnable.operationList[row]
+        
+        if hasattr(self, 'requestGroupBox'):
+            self.mainLayout.removeWidget(self.requestGroupBox)
+            self.requestGroupBox.hide()
+            del self.requestGroupBox
+        self.showRequestLayout(respDict['response'].urllib2Request)
+        self.mainLayout.addWidget(self.requestGroupBox, 0, 1)
+        
+        if hasattr(self, 'responseGroupBox'):
+            self.mainLayout.removeWidget(self.responseGroupBox)
+            self.responseGroupBox.hide()
+            del self.responseGroupBox
+        self.showRsponseLayout(respDict['response'].urllib2Response)
+        self.mainLayout.addWidget(self.responseGroupBox, 1, 1)
+        
+        
+    def initSubUploadTableLayout(self):
+        ''' 左侧分片上传任务列表 '''
+        self.subUploadTable = QtGui.QTableWidget(0, 2, self)
+        self.subUploadTable.setHorizontalHeaderLabels((u"分片", u"状态"))
+        self.subUploadTable.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+        self.subUploadTable.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
+#         self.subUploadTable.horizontalHeader().setResizeMode(0, QtGui.QHeaderView.Stretch)
+#         self.subUploadTable.horizontalHeader().setResizeMode(1, QtGui.QHeaderView.ResizeToContents)
+        self.subUploadTable.verticalHeader().hide()
+        self.subUploadTable.setShowGrid(False)
+        self.subUploadTable.setMaximumWidth(220)
+        self.subUploadTable.setMinimumWidth(200)
+        self.subUploadTable.itemSelectionChanged.connect(self.showDetail)
+        
+        self.subUploadTable.clearContents()
+        self.subUploadTable.setRowCount(0)
+        
+        
+#         '''操作列表，用于显示操作详情
+#             {u'response':scsResponse,
+#              u'operation_name':u'合并分片',
+#              u'result':u'完成'}
+#         '''
+#         self.operationList = []
+        
+        for operDict in self.multipartRunnable.operationList :
+            
+            operation = QtGui.QTableWidgetItem(operDict['operation_name'])  #name
+            operation.setFlags(operation.flags() & ~QtCore.Qt.ItemIsEditable)
+            
+            result = QtGui.QTableWidgetItem(operDict['result'])
+            result.setFlags(result.flags() & ~QtCore.Qt.ItemIsEditable)
+            
+            row = self.subUploadTable.rowCount()
+            self.subUploadTable.insertRow(row)
+            self.subUploadTable.setItem(row, 0, operation)
+            self.subUploadTable.setItem(row, 1, result)
+            
+        
+    def showRequestLayout(self, urllib2Request): 
+        ''' 初始化请求layout '''
+        self.requestGroupBox = QtGui.QGroupBox(u"请求")
+            
+        urlNameLabel = QtGui.QLabel(u"请求地址:")
+        urlLabel = QtGui.QLabel(urllib2Request.get_full_url() if urllib2Request else '')
+        urlLabel.setWordWrap(True)
+        methodNameLabel = QtGui.QLabel(u"请求方式:")
+        methodLabel = QtGui.QLabel(urllib2Request.get_method() if urllib2Request else '')
+        
+        requestHeaderNameLabel = QtGui.QLabel(u"<b>请求header:</b>")
+        
+        requestBodyNameLabel = QtGui.QLabel(u"<b>请求body:</b>")
+        self.requestBodyTextEdit = QtGui.QTextEdit()
+        self.requestBodyTextEdit.setReadOnly(True)
+        self.requestBodyTextEdit.setMaximumHeight(50)
+        self.requestBodyTextEdit.setMinimumHeight(50)
+        self.requestBodyTextEdit.setLineWrapMode(QtGui.QTextEdit.NoWrap)
+        
+        if urllib2Request and hasattr(urllib2Request.data,'fileno'): #file like
+            self.requestBodyTextEdit.setText('<file data. %s>'%urllib2Request.data.name)
+        else:
+            self.requestBodyTextEdit.setText(urllib2Request.data if urllib2Request and urllib2Request.data else '<request is empty!>')
+        
+        rowIdx = 0
+        layout = QtGui.QGridLayout()
+        
+        layout.addWidget(urlNameLabel, rowIdx, 0)
+        layout.addWidget(urlLabel, rowIdx, 1)
+        rowIdx+=1
+        layout.addWidget(methodNameLabel, rowIdx, 0)
+        layout.addWidget(methodLabel, rowIdx, 1)
+        rowIdx+=1
+        layout.addWidget(requestHeaderNameLabel, rowIdx, 0)
+        rowIdx+=1
+        if urllib2Request:
+            for k, v in urllib2Request.header_items() :
+                layout.addWidget(QtGui.QLabel(k), rowIdx, 0)
+                layout.addWidget(QtGui.QLabel(v), rowIdx, 1)
+                rowIdx += 1
+            
+        layout.addWidget(requestBodyNameLabel, rowIdx, 0,)
+        rowIdx += 1
+        layout.addWidget(self.requestBodyTextEdit, rowIdx, 0, 1, 5)
+        
+        self.requestGroupBox.setLayout(layout)
+    
+    def showRsponseLayout(self, urllib2Response, responseBody=None):
+        ''' 初始化响应layout '''
+        self.responseGroupBox = QtGui.QGroupBox(u"响应")
+            
+        responseCodeNameLabel = QtGui.QLabel(u"<b>响应码:</b>")
+        responseCodeLabel = QtGui.QLabel()
+        if urllib2Response and hasattr(urllib2Response, 'code') :
+            if urllib2Response.code >= 200 and urllib2Response.code <= 300:
+                responseCode = '%d'%urllib2Response.code
+            else:
+                responseCode = '<font color=red>%d</font>'%urllib2Response.code
+            responseCodeLabel.setText(responseCode)
+        responseHeaderNameLabel = QtGui.QLabel(u"<b>响应header:</b>")
+        responseBodyNameLabel = QtGui.QLabel(u"<b>响应body:</b>")
+        self.responseBodyTextEdit = QtGui.QTextEdit()
+        self.responseBodyTextEdit.setReadOnly(True)
+        self.responseBodyTextEdit.setMaximumHeight(50)
+        self.responseBodyTextEdit.setMinimumHeight(50)
+        self.responseBodyTextEdit.setLineWrapMode(QtGui.QTextEdit.NoWrap)
+        
+        if responseBody is not None:
+            body = responseBody
+        else:
+            body = '<respondy body is empty!>'
+        self.responseBodyTextEdit.setText( body )
+        
+        layout = QtGui.QGridLayout()
+        layout.addWidget(responseCodeNameLabel, 0, 0)
+        layout.addWidget(responseCodeLabel, 0, 1)
+        layout.addWidget(responseHeaderNameLabel, 1, 0)
+        rowIdx = 2
+        headers = dict(urllib2Response.info()) if hasattr(urllib2Response, 'info') else {}
+        for k, v in headers.iteritems() :
+            layout.addWidget(QtGui.QLabel(k), rowIdx, 0)
+            layout.addWidget(QtGui.QLabel(v), rowIdx, 1)
+            rowIdx += 1
+            
+        layout.addWidget(responseBodyNameLabel, rowIdx, 0,)
+        rowIdx += 1
+        layout.addWidget(self.responseBodyTextEdit, rowIdx, 0, 1, 5)
+        
+        self.responseGroupBox.setLayout(layout)
+        
+        
 
 class OperationLogDetail(QtGui.QDialog):
     ''' 操作详细页面 '''
@@ -220,7 +391,7 @@ class OperationLogTable(QtGui.QTableWidget):
         if len(self.selectedIndexes()) > 0:
             operDict = OperationLogTable.logArray[self.selectedIndexes()[0].row()]
             operRunnable = operDict['thread'];
-            if isinstance(operRunnable, FileUploadRunnable) or isinstance(operRunnable, DownloadObjectRunnable):
+            if isinstance(operRunnable, FileUploadRunnable) or isinstance(operRunnable, DownloadObjectRunnable) or isinstance(operRunnable, FileMultipartUploadRunnable):
                 operRunnable.cancel()
         
     def retryAction(self, event):
@@ -280,12 +451,17 @@ class OperationLogTable(QtGui.QTableWidget):
         operDict = OperationLogTable.logArray[row]
         operRunnable = operDict['thread'];
         
-        if hasattr(operRunnable,'response') :
-            self.operationLogDetail = OperationLogDetail(operRunnable.response, self)
+#         if isinstance(operRunnable, FileUploadRunnable) and operRunnable.useMultipartUpload:
+        if isinstance(operRunnable, FileMultipartUploadRunnable):
+            self.operationLogDetail = OperationLogDetailForMultipartUpload(operRunnable, self)
             self.operationLogDetail.show()
         else:
-            #TODO:提示稍后
-            pass
+            if hasattr(operRunnable,'response') :
+                self.operationLogDetail = OperationLogDetail(operRunnable.response, self)
+                self.operationLogDetail.show()
+            else:
+                #TODO:提示稍后
+                pass
     
     def removeOperation(self, logDict):
         for idx,dict in enumerate(OperationLogTable.logArray):
@@ -1504,8 +1680,8 @@ class FilesTable(QtGui.QTableWidget):
     def uploadFileUpdateProgress(self, thread, total, received):
         ''' 更新上传进度 '''
         try:
-            if thread.received*100 / thread.total != 100:
-                result = u'上传中(%d%%)'%(thread.received*100 / thread.total)
+            if received*100 / total != 100:
+                result = u'上传中(%d%%)'%(received*100 / total)
             else:
                 result = u'完成'
                 
@@ -1545,14 +1721,6 @@ class FilesTable(QtGui.QTableWidget):
                                                              'result':u'完成',
                                                              'thread':runnable})
         self.refreshTableList()
-    
-    def uploadFile(self, filePath):
-        if filePath :
-            fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, self.currentPrefix, self)
-            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
-            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadFileDidFinished)
-            QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadFileDidFailed)
-            self.openner.startOperationRunnable(fileUploadRunnable)
     
     def downloadFileAction(self, event):
         ''' 文件列表右键contextMenu-downloadfile action '''
@@ -1643,7 +1811,6 @@ class FilesTable(QtGui.QTableWidget):
             for qfilepath in filePathArray:
                 self.toBeUploadObjectsArray.append(u'%s'%qfilepath)
         
-#         print '=====11111========basePath=-------------',basePath
         if os.name == 'nt':
             basePath = os.path.dirname(basePath)+'/'
 #         else:
@@ -1672,6 +1839,19 @@ class FilesTable(QtGui.QTableWidget):
                     prefix = ''
 #                 print '=2===not isdir(filePath)======',fName,prefix
                 
+                #TODO:分片上传未完成
+#                 if os.stat(filePath).st_size > 50 * 1024 * 1024 :     #文件大于50M采用分片上传
+#                     ''' 分片上传 '''
+#                     fileMultipartUploadRunnable = FileMultipartUploadRunnable(self.currentBucketName, filePath, prefix, self)
+#                     QtCore.QObject.connect(fileMultipartUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
+#                     QtCore.QObject.connect(fileMultipartUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadMultiFileDidFinished)
+#                     QtCore.QObject.connect(fileMultipartUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidFailed)
+#                     QtCore.QObject.connect(fileMultipartUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidCanceled)
+#                     self.openner.startOperationRunnable(fileMultipartUploadRunnable)
+#                     self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+#                                                                  'result':u'处理中',
+#                                                                  'thread':fileMultipartUploadRunnable})
+#                 else:
                 fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, prefix, self)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadMultiFileDidFinished)
@@ -1679,8 +1859,8 @@ class FilesTable(QtGui.QTableWidget):
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidCanceled)
                 self.openner.startOperationRunnable(fileUploadRunnable)
                 self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
-                                                             'result':u'处理中',
-                                                             'thread':fileUploadRunnable})
+                                                                 'result':u'处理中',
+                                                                 'thread':fileUploadRunnable})
 
     def createMultiFolderDidFinished(self, runnable):
         ''' 批量上传目录--完成 '''
