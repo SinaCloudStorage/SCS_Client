@@ -605,12 +605,12 @@ class CheckNewVersionRunnable(QtCore.QRunnable):
         try:
             self.mutex.lock()
             import urllib2
-            response = urllib2.urlopen('http://sinastorage.com/sdk/SCS-Client-Win7/check_version.json', timeout=10)
+            response = urllib2.urlopen('http://sinastorage.cn/sdk/SCS-Client-Win7/check_version.json', timeout=10)
             '''
                 {
                     "version_name": "v1.0",
                     "version_code": "1",
-                    "download_url": "http://open.sinastorage.com"
+                    "download_url": "http://open.sinastorage.cn"
                 }
             '''
             self.versionDict = json.loads(response.read())

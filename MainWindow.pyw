@@ -346,7 +346,7 @@ class MainWindow(QtGui.QMainWindow):
             {
                 "version_name": "v1.0",
                 "version_code": 1,
-                "download_url": "http://open.sinastorage.com"
+                "download_url": "http://open.sinastorage.cn"
             }
         '''
         if verDict['version_code'] > VERSION_CODE:
