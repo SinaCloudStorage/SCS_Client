@@ -173,7 +173,7 @@ class FileUploadRunnable(BaseRunnable):
     def uploadCallBack(self, total, uploaded):
         self.total = total
         self.received = self.received + uploaded
-        self.emitter.emit(QtCore.SIGNAL("fileUploadProgress(PyQt_PyObject, int, int)"), self, self.total, self.received)
+        self.emitter.emit(QtCore.SIGNAL("fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)"), self, self.total, self.received)
     
     def upload(self):
         ''' 普通上传 '''
@@ -428,14 +428,14 @@ class DownloadObjectRunnable(BaseRunnable):
             responseHeaders = dict(self.response.urllib2Response.info())
             if statusCode == 200:
                 if "content-length" in responseHeaders:
-                    self.total = int(responseHeaders["content-length"])
+                    self.total = long(responseHeaders["content-length"])
                 else:
                     raise ValueError("Content-Length not returned!!")
             elif statusCode == 206:
                 ''' 用于断点续传时获取文件总大小 '''
                 if "content-range" in responseHeaders:
                     content_range = responseHeaders["content-range"]
-                    self.total = int(content_range[content_range.rfind('/')+1:])
+                    self.total = long(content_range[content_range.rfind('/')+1:])
                 else:
                     raise ValueError("Content-Length not returned!!")
             
@@ -480,7 +480,7 @@ class DownloadObjectRunnable(BaseRunnable):
     
     def downloadCallBack(self, received):
         self.received = self.received + received
-        self.emitter.emit(QtCore.SIGNAL("FileDownloadProgress(PyQt_PyObject, int, int)"), self, self.total, self.received)
+        self.emitter.emit(QtCore.SIGNAL("FileDownloadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)"), self, self.total, self.received)
     
 class DeleteBucketRunnable(BaseRunnable):
     ''' 删除bucket ''' 
@@ -605,7 +605,7 @@ class CheckNewVersionRunnable(QtCore.QRunnable):
         try:
             self.mutex.lock()
             import urllib2
-            response = urllib2.urlopen('http://sinastorage.cn/sdk/SCS-Client-Win7/check_version.json', timeout=10)
+            response = urllib2.urlopen('http://sinastorage.com/sdk/SCS-Client-Win7/check_version.json', timeout=10)
             '''
                 {
                     "version_name": "v1.0",

@@ -35,8 +35,8 @@ USER_ACCESS_SECRET   = ''
 
 USE_SECURE_CONNECTION = False
 
-VERSION_CODE = 1
-VERSION_NAME = u'v0.0.1'
+VERSION_CODE = 2
+VERSION_NAME = u'v0.0.2'
 
 # try:
 #     import sdi_rc3

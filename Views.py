@@ -401,7 +401,7 @@ class OperationLogTable(QtGui.QTableWidget):
             if operRunnable.state == RunnableState.DID_CANCELED or operRunnable.state == RunnableState.DID_FAILED:
                 if isinstance(operRunnable, FileUploadRunnable):
                     fileUploadRunnable = FileUploadRunnable(operRunnable.bucketName, operRunnable.filePath, operRunnable.prefix, operRunnable.parent)
-                    QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),operRunnable.parent.uploadFileUpdateProgress)
+                    QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)'),operRunnable.parent.uploadFileUpdateProgress)
                     QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidFinished)
                     QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidFailed)
                     QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidCanceled)
@@ -412,7 +412,7 @@ class OperationLogTable(QtGui.QTableWidget):
                 else:
                     downloadObjectRunnable = DownloadObjectRunnable(operRunnable.bucketName, operRunnable.key, operRunnable.fileMD5, operRunnable.destFilePath, operRunnable.tmpFilePath, operRunnable.parent)
                     QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),operRunnable.parent.downloadFileDidFinished)
-                    QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),operRunnable.parent.downloadFileUpdateProgress)
+                    QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)'),operRunnable.parent.downloadFileUpdateProgress)
                     QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.downloadFileDidFailed)
                     QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidCanceled(PyQt_PyObject)'),operRunnable.parent.downloadFileDidCanceled)
                     result = self.openner.startOperationRunnable(downloadObjectRunnable)
@@ -1769,7 +1769,7 @@ class FilesTable(QtGui.QTableWidget):
                                                                 tmpFilePath,
                                                                 self)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),self.downloadFileDidFinished)
-                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, int, int)'),self.downloadFileUpdateProgress)
+                QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('FileDownloadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)'),self.downloadFileUpdateProgress)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.downloadFileDidFailed)
                 QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectDidCanceled(PyQt_PyObject)'),self.downloadFileDidCanceled)
                 result = self.openner.startOperationRunnable(downloadObjectRunnable)
@@ -1853,7 +1853,7 @@ class FilesTable(QtGui.QTableWidget):
 #                                                                  'thread':fileMultipartUploadRunnable})
 #                 else:
                 fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, prefix, self)
-                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),self.uploadFileUpdateProgress)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)'),self.uploadFileUpdateProgress)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadMultiFileDidFinished)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidFailed)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidCanceled)
