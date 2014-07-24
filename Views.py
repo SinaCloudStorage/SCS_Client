@@ -1815,7 +1815,6 @@ class FilesTable(QtGui.QTableWidget):
             basePath = os.path.dirname(basePath)+'/'
 #         else:
 #             basePath = os.path.dirname(os.path.dirname(basePath))+'/'
-#         print '=============basePath=-------------',basePath
         for filePath in self.toBeUploadObjectsArray :
             if os.path.isdir(filePath):
                 dirName = filePath[filePath.find(basePath)+len(basePath):]

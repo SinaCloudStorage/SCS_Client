@@ -107,11 +107,19 @@ class MainWindow(QtGui.QMainWindow):
         if not fileNames:
             return False
         
-        self.openFilesPath = u'%s'%fileNames[0]
+        fileNamesArray = []
+        for fileName in fileNames:
+            fileName = u'%s'%fileName
+            if os.name == 'nt':
+                fileName = fileName.replace('\\','/')
+            fileNamesArray.append(fileName)
+        
+        
+        self.openFilesPath = fileNamesArray[0]
         basePath = os.path.dirname(self.openFilesPath)
         
         if self.filesTable :
-            self.filesTable.uploadMultiObjectAction(fileNames,basePath+'/')
+            self.filesTable.uploadMultiObjectAction(fileNamesArray,basePath+'/')
         
     def newfolder(self):
         folderName, ok = QtGui.QInputDialog.getText(self, u"新建目录" if self.filesTable == self.central_widget.currentWidget() else u'新建bucket',
