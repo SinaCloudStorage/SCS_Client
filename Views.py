@@ -721,12 +721,10 @@ class BucketInfoDialog(QtGui.QDialog):
         self.connect(self, QtCore.SIGNAL("finished(int)"), self.finished)
         self.refreshViews()
     
-<<<<<<< HEAD
     def finished(self, code):
         self.isRunning = False
         self.deleteLater()    
     
-=======
     
     def aclUserTableCellChanged (self, row, col):
         ''' cell 修改监听事件 '''
