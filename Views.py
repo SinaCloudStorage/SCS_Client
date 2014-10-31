@@ -806,7 +806,6 @@ class BucketInfoDialog(QtGui.QDialog):
         
     ''' aclUserTable 右键 end'''
         
->>>>>>> FETCH_HEAD
     def refreshViews(self):
         if self.isRunning:
             bucketInfoRunnable = BucketInfoRunnable(self.bucketName, self)
