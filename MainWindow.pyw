@@ -22,7 +22,8 @@ from Utils import (filesizeformat, bytesFromFilesizeFormat, getFileAmount,
                    removeKeyFromWindowsRegistry)
 
 
-from Runnables import (RunnableState, FileUploadRunnable, FileInfoRunnable, UpdateFileACLRunnable, 
+from Runnables import (RunnableState, FileUploadRunnable, FileMultipartUploadRunnable, 
+                       FileInfoRunnable, UpdateFileACLRunnable, 
                        ListDirRunnable, ListBucketRunnable, DeleteObjectRunnable,
                        DownloadObjectRunnable, DeleteBucketRunnable, BucketInfoRunnable,
                        CreateFolderRunnable, CreateBucketRunnable,CheckNewVersionRunnable)
@@ -35,8 +36,25 @@ USER_ACCESS_SECRET   = ''
 
 USE_SECURE_CONNECTION = False
 
-VERSION_CODE = 2
-VERSION_NAME = u'v0.0.2'
+VERSION_CODE = 3
+VERSION_NAME = u'v0.0.3'
+
+def gcHistogram(): 
+        """Returns per-class counts of existing objects.""" 
+        result = {} 
+        import gc
+        for o in gc.get_objects(): 
+                t = type(o) 
+                count = result.get(t, 0) 
+                result[t] = count + 1 
+        return result 
+
+def diffHists(h1, h2): 
+        """Prints differences between two results of gcHistogram().""" 
+        for k in h1: 
+                if h1[k] != h2[k]: 
+                        print "%s: %d -> %d (%s%d)" % ( 
+                                k, h1[k], h2[k], h2[k] > h1[k] and "+" or "", h2[k] - h1[k]) 
 
 # try:
 #     import sdi_rc3
@@ -46,8 +64,8 @@ VERSION_NAME = u'v0.0.2'
 import resource
 
 class MainWindow(QtGui.QMainWindow):
-    sequenceNumber = 1
-    windowList = []
+#     sequenceNumber = 1
+#     windowList = []
     USE_HTTPS_CONNECTION = False
 
     def __init__(self, fileName=None):
@@ -62,14 +80,15 @@ class MainWindow(QtGui.QMainWindow):
         
         self.runnables = []     #保存所有上传、下载的runnable列表
         
+#         h1 = gcHistogram() 
         self.init()
-        
+#         h2 = gcHistogram() 
+#         diffHists(h1, h2) 
         self.checkNewVersion()
 
     def startOperationRunnable(self, operationRunnable):
         if operationRunnable is not None :
-            if isinstance(operationRunnable, FileUploadRunnable) or isinstance(operationRunnable, DownloadObjectRunnable):
-                
+            if isinstance(operationRunnable, (FileUploadRunnable, DownloadObjectRunnable, FileMultipartUploadRunnable)):
                 if isinstance(operationRunnable, DownloadObjectRunnable):
                     #检查是否有相同tmpFilePath的正在执行的runnable
                     for runnable in self.runnables:
@@ -297,10 +316,9 @@ class MainWindow(QtGui.QMainWindow):
     def loginBtnAction(self):
         ''' 登录按钮事件 '''
         USE_SECURE_CONNECTION = self.loginWindow.isSecureConnectionCheckBox.isChecked()
-        USER_ACCESS_KEY = u'%s'%self.loginWindow.accessKeyEdit.text()#unicode(self.loginWindow.accessKeyEdit.text(),'utf-8','ignore')
-        USER_ACCESS_SECRET = u'%s'%self.loginWindow.accessSecretEdit.text()#unicode(self.loginWindow.accessSecretEdit.text(),'utf-8','ignore')
+        USER_ACCESS_KEY = u'%s'%self.loginWindow.accessKeyEdit.text()
+        USER_ACCESS_SECRET = u'%s'%self.loginWindow.accessSecretEdit.text()
 
-        print USER_ACCESS_KEY+'    '+USER_ACCESS_SECRET+('      %i'%USE_SECURE_CONNECTION)
         sinastorage.setDefaultAppInfo(USER_ACCESS_KEY, USER_ACCESS_SECRET, True if USE_SECURE_CONNECTION == 1 else False)
         
         listBucketRunnable = ListBucketRunnable(self)
@@ -332,6 +350,7 @@ class MainWindow(QtGui.QMainWindow):
         self.central_widget.addWidget(self.bucketsTable)
         self.showBuckets(runnable.bucketIter())
         self.central_widget.removeWidget(self.loginWindow)
+        sip.delete(self.loginWindow)
         
         self.reloadAct.setEnabled(True)
         self.newfolderAct.setEnabled(True)
@@ -362,6 +381,7 @@ class MainWindow(QtGui.QMainWindow):
                 u"发现新版本", 
                 u'<p>发现新版本</p><p>点击进行下载<a href=%s>%s</p>'%(verDict['download_url'],verDict['version_name']))
         
+        del verDict
         
                 
 if __name__ == '__main__':

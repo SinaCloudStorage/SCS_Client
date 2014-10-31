@@ -7,6 +7,7 @@ Created on 2014年5月29日
 '''
 
 import sip
+from compiler.ast import Lambda
 sip.setapi('QVariant', 2)
 
 import os
@@ -45,10 +46,9 @@ class OperationLogDetailForMultipartUpload(QtGui.QDialog):
         self.mainLayout.addWidget(self.responseGroupBox, 1, 1)
         
         self.setLayout(self.mainLayout)
-        
         self.setMinimumHeight(700)
-        
         self.subUploadTable.selectRow(0)
+        self.connect(self, QtCore.SIGNAL("finished(int)"), lambda code:self.deleteLater())
     
     def showDetail(self):
         row = self.subUploadTable.selectedIndexes()[0].row()
@@ -57,6 +57,7 @@ class OperationLogDetailForMultipartUpload(QtGui.QDialog):
         if hasattr(self, 'requestGroupBox'):
             self.mainLayout.removeWidget(self.requestGroupBox)
             self.requestGroupBox.hide()
+            sip.delete(self.requestGroupBox)
             del self.requestGroupBox
         self.showRequestLayout(respDict['response'].urllib2Request)
         self.mainLayout.addWidget(self.requestGroupBox, 0, 1)
@@ -64,6 +65,7 @@ class OperationLogDetailForMultipartUpload(QtGui.QDialog):
         if hasattr(self, 'responseGroupBox'):
             self.mainLayout.removeWidget(self.responseGroupBox)
             self.responseGroupBox.hide()
+            sip.delete(self.responseGroupBox)
             del self.responseGroupBox
         self.showRsponseLayout(respDict['response'].urllib2Response)
         self.mainLayout.addWidget(self.responseGroupBox, 1, 1)
@@ -199,7 +201,6 @@ class OperationLogDetailForMultipartUpload(QtGui.QDialog):
         self.responseGroupBox.setLayout(layout)
         
         
-
 class OperationLogDetail(QtGui.QDialog):
     ''' 操作详细页面 '''
     def __init__(self, scsResponse, parent=None):
@@ -213,8 +214,9 @@ class OperationLogDetail(QtGui.QDialog):
         mainLayout = QtGui.QVBoxLayout()
         mainLayout.addWidget(self.requestGroupBox)
         mainLayout.addWidget(self.responseGroupBox)
-#         mainLayout.addLayout(bottomLayout)
         self.setLayout(mainLayout)
+        self.connect(self, QtCore.SIGNAL("finished(int)"), lambda code:self.deleteLater())
+
         
     def initRequestLayout(self):    
         ''' 初始化请求layout '''
@@ -409,6 +411,17 @@ class OperationLogTable(QtGui.QTableWidget):
                     self.openner.operationLogTable.updateLogDict({'operation':'upload file' if isinstance(operRunnable, FileUploadRunnable) else 'download file', 
                                                                      'result':u'处理中',
                                                                      'thread':fileUploadRunnable})
+                elif isinstance(operRunnable, FileMultipartUploadRunnable):
+                    ''' 分片上传 '''
+                    fileMultipartUploadRunnable = FileMultipartUploadRunnable(operRunnable.bucketName, operRunnable.filePath, operRunnable.prefix, operRunnable.parent)
+                    QtCore.QObject.connect(fileMultipartUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, int, int)'),operRunnable.parent.uploadFileUpdateProgress)
+                    QtCore.QObject.connect(fileMultipartUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidFinished)
+                    QtCore.QObject.connect(fileMultipartUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidFailed)
+                    QtCore.QObject.connect(fileMultipartUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidCanceled)
+                    operRunnable.parent.openner.startOperationRunnable(fileMultipartUploadRunnable)
+                    self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+                                                                 'result':u'处理中',
+                                                                 'thread':fileMultipartUploadRunnable})
                 else:
                     downloadObjectRunnable = DownloadObjectRunnable(operRunnable.bucketName, operRunnable.key, operRunnable.fileMD5, operRunnable.destFilePath, operRunnable.tmpFilePath, operRunnable.parent)
                     QtCore.QObject.connect(downloadObjectRunnable.emitter,QtCore.SIGNAL('DownloadObjectRunnable(PyQt_PyObject)'),operRunnable.parent.downloadFileDidFinished)
@@ -451,7 +464,6 @@ class OperationLogTable(QtGui.QTableWidget):
         operDict = OperationLogTable.logArray[row]
         operRunnable = operDict['thread'];
         
-#         if isinstance(operRunnable, FileUploadRunnable) and operRunnable.useMultipartUpload:
         if isinstance(operRunnable, FileMultipartUploadRunnable):
             self.operationLogDetail = OperationLogDetailForMultipartUpload(operRunnable, self)
             self.operationLogDetail.show()
@@ -506,6 +518,7 @@ class LoginWindow(QtGui.QWidget):
         
         self.openner = openner
         self.setupViews()
+        
         
     def setupViews(self):
         self.loginGroup = QtGui.QGroupBox(u"登录")
@@ -566,12 +579,14 @@ class LoginWindow(QtGui.QWidget):
 
 
 class BucketInfoDialog(QtGui.QDialog):
+    isRunning = False
     ''' bucket信息对话框 '''
     def __init__(self, bucketName, parent=None):
         super(BucketInfoDialog, self).__init__(parent)
         
         self.openner = parent
         self.bucketName = bucketName
+        self.isRunning = True
         
         bucketNameLabel = QtGui.QLabel(u"<b>%s</b>"%self.bucketName)
         deleteQuantityNameLabel = QtGui.QLabel("deleteQuantity:")
@@ -669,7 +684,6 @@ class BucketInfoDialog(QtGui.QDialog):
         item.setTextAlignment(QtCore.Qt.AlignCenter)
         self.aclTable.setItem(1, 0, item)
         mainLayout.addWidget(self.aclTable,15,0,1,2)
-
         
         ''' acl user '''        
         self.aclUserTable = QtGui.QTableWidget(0, 5, self)
@@ -702,29 +716,38 @@ class BucketInfoDialog(QtGui.QDialog):
         self.setLayout(mainLayout)
         self.setWindowTitle(u'%s的Meta信息'%self.bucketName)
         self.resize(400, 600)
-        
+        self.connect(self, QtCore.SIGNAL("finished(int)"), self.finished)
         self.refreshViews()
-        
+    
+    def finished(self, code):
+        self.isRunning = False
+        self.deleteLater()    
+    
     def refreshViews(self):
-        bucketInfoRunnable = BucketInfoRunnable(self.bucketName, self)
-        QtCore.QObject.connect(bucketInfoRunnable.emitter,QtCore.SIGNAL('BucketInfoRunnable(PyQt_PyObject, PyQt_PyObject)'),self.setupView)
-        QtCore.QObject.connect(bucketInfoRunnable.emitter,QtCore.SIGNAL('BucketInfoDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.bucketInfoDidFailed)
-        self.openner.openner.startOperationRunnable(bucketInfoRunnable)
-        
-        self.openner.openner.operationLogTable.updateLogDict({'operation':'get bucket info', 
-                                                   'result':u'处理中',
-                                                   'thread':bucketInfoRunnable})
+        if self.isRunning:
+            bucketInfoRunnable = BucketInfoRunnable(self.bucketName, self)
+            QtCore.QObject.connect(bucketInfoRunnable.emitter,QtCore.SIGNAL('BucketInfoRunnable(PyQt_PyObject, PyQt_PyObject)'),self.setupView)
+            QtCore.QObject.connect(bucketInfoRunnable.emitter,QtCore.SIGNAL('BucketInfoDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.bucketInfoDidFailed)
+            self.openner.openner.startOperationRunnable(bucketInfoRunnable)
+            
+            self.openner.openner.operationLogTable.updateLogDict({'operation':'get bucket info', 
+                                                       'result':u'处理中',
+                                                       'thread':bucketInfoRunnable})
         
     def bucketInfoDidFailed(self, runnable, errorMsg):
-        self.openner.openner.operationLogTable.updateLogDict({'operation':'get bucket info', 
-                                                   'result':u'失败',
-                                                   'thread':runnable})
-        reply = QtGui.QMessageBox.information(self,
-                u"获取bucket信息失败", 
-                u'<p>失败原因：%s</p>'%errorMsg)
+        if self.isRunning :
+            self.openner.openner.operationLogTable.updateLogDict({'operation':'get bucket info', 
+                                                       'result':u'失败',
+                                                       'thread':runnable})
+            reply = QtGui.QMessageBox.information(self,
+                    u"获取bucket信息失败", 
+                    u'<p>失败原因：%s</p>'%errorMsg)
         
     def setupView(self, runnable, metaResult):
         ''' 接口返回数据后，更新界面 '''
+        if self.isRunning is None:
+            return
+        
         self.openner.openner.operationLogTable.updateLogDict({'operation':'get bucket info', 
                                                    'result':u'完成',
                                                    'thread':runnable})
@@ -887,10 +910,364 @@ u'RelaxUpload': True,
                                                     'thread':updateFileACLRunnable})
         
         self.accept()
+
+class MultiFileInfoDialog(QtGui.QDialog):
+    isRunning = False
+    ''' 多文件信息对话框 '''
+    def __init__(self, parent=None, bucketName=None, keys=None, prefix=None):
+        super(MultiFileInfoDialog, self).__init__(parent)
+        
+        self.openner = parent
+        
+        self.bucketName = bucketName
+        self.keys = keys
+        self.prefix = prefix
+        self.isRunning = True
+        #目录数量
+        folderAmount = 0
+        for key in keys:
+            if key.find('/') == len(key)-1 :
+                folderAmount += 1
+        self.fileNameLabel = QtGui.QLabel(u"<b>%d个文件</b>"%len(keys))
+        
+        self.kindLabel = QtGui.QLabel(u"类型:")
+        self.kindValueLabel = QtGui.QLabel("多种类型")
+        
+        self.bucketLabel = QtGui.QLabel(u"所属bucket:")
+        self.bucketValueLabel = QtGui.QLabel(bucketName)
+        
+        ''' button '''
+        self.buttonBox = QtGui.QDialogButtonBox()
+        self.acceptBtn = QtGui.QPushButton(u"确认")
+        self.acceptBtn.setEnabled(True)
+        self.buttonBox.addButton(self.acceptBtn, QtGui.QDialogButtonBox.AcceptRole)
+        
+        self.cancelBtn = QtGui.QPushButton(u"取消")
+        self.cancelBtn.setEnabled(True)
+        self.buttonBox.addButton(self.cancelBtn, QtGui.QDialogButtonBox.RejectRole)
+        
+        self.buttonBox.accepted.connect(self.updateAcl)
+        self.buttonBox.rejected.connect(self.reject)
+        
+        mainLayout = QtGui.QGridLayout()
+        mainLayout.addWidget(self.fileNameLabel, 0, 0, 1, 2)
+        mainLayout.addWidget(self.kindLabel, 1, 0)
+        mainLayout.addWidget(self.kindValueLabel, 1, 1)
+        
+        mainLayout.addWidget(self.bucketLabel, 2, 0)
+        mainLayout.addWidget(self.bucketValueLabel, 2, 1)
+        
+        ''' acl '''
+        self.aclTable = QtGui.QTableWidget(2, 5, self)
+        self.aclTable.setHorizontalHeaderLabels((u"组", u"读权限", u"写权限", u"读ACL", u"写ACL"))
+        self.aclTable.horizontalHeader().setResizeMode(0, QtGui.QHeaderView.Stretch)
+        self.aclTable.horizontalHeader().setResizeMode(1, QtGui.QHeaderView.ResizeToContents)
+        self.aclTable.horizontalHeader().setResizeMode(2, QtGui.QHeaderView.ResizeToContents)
+        self.aclTable.horizontalHeader().setResizeMode(3, QtGui.QHeaderView.ResizeToContents)
+        self.aclTable.horizontalHeader().setResizeMode(4, QtGui.QHeaderView.ResizeToContents)
+        self.aclTable.verticalHeader().hide()
+        self.aclTable.setShowGrid(False)
+        
+        columns = 5
+        rows = 2
+        for column in range(columns):
+            if column == 0:
+                continue
+            for row in range(rows):
+                item = QtGui.QTableWidgetItem('')
+                item.setFlags(QtCore.Qt.ItemIsUserCheckable |
+                              QtCore.Qt.ItemIsEnabled)
+                item.setCheckState(QtCore.Qt.Unchecked)
+                self.aclTable.setItem(row, column, item)
+        
+        item = QtGui.QTableWidgetItem(u'匿名用户组')
+        item.setFlags(QtCore.Qt.ItemIsEnabled)
+        item.setTextAlignment(QtCore.Qt.AlignCenter)
+        self.aclTable.setItem(0, 0, item)
+        
+        item = QtGui.QTableWidgetItem(u'认证用户组')
+        item.setFlags(QtCore.Qt.ItemIsEnabled)
+        item.setTextAlignment(QtCore.Qt.AlignCenter)
+        self.aclTable.setItem(1, 0, item)
+        mainLayout.addWidget(self.aclTable,3,0,1,2)
+        
+        ''' acl user '''        
+        self.aclUserTable = QtGui.QTableWidget(0, 5, self)
+        self.aclUserTable.setHorizontalHeaderLabels((u"UserId", u"读权限", u"写权限", u"读ACL", u"写ACL"))
+        self.aclUserTable.horizontalHeader().setResizeMode(0, QtGui.QHeaderView.Stretch)
+        self.aclUserTable.horizontalHeader().setResizeMode(1, QtGui.QHeaderView.ResizeToContents)
+        self.aclUserTable.horizontalHeader().setResizeMode(2, QtGui.QHeaderView.ResizeToContents)
+        self.aclUserTable.horizontalHeader().setResizeMode(3, QtGui.QHeaderView.ResizeToContents)
+        self.aclUserTable.horizontalHeader().setResizeMode(4, QtGui.QHeaderView.ResizeToContents)
+        self.aclUserTable.verticalHeader().hide()
+        self.aclUserTable.setShowGrid(False)
+        self.aclUserTable.cellChanged.connect(self.aclUserTableCellChanged)
+        
+        self.aclUserTable.contextMenuEvent = self.aclUserTableContextMenuEvent
+        
+        mainLayout.addWidget(self.aclUserTable,4,0,1,2)
+        
+        mainLayout.addWidget(self.buttonBox, 5, 0, 1, 2)
+        
+        self.setLayout(mainLayout)
+        self.setWindowTitle(key)
+        self.resize(400, 400)
+        self.connect(self, QtCore.SIGNAL("finished(int)"), self.finished)
+        
+    def finished(self, code):
+        self.isRunning = False
+        self.deleteLater()
+        
+    def aclUserTableCellChanged (self, row, col):
+        ''' cell 修改监听事件 '''
+        if col == 0:
+            userId = u'%s'%self.aclUserTable.item(row, col).text()
+            if len(userId) != 20 and len(userId) != 0:
+                QtGui.QMessageBox.information(self,
+                                              u"UserId长度不合法", 
+                                              u'<p>UserId长度必须是20位</p>')
+                item = self.aclUserTable.item(row, col)
+                self.aclUserTable.scrollToItem(item)
+                self.aclUserTable.setItemSelected(item,True)
+        
+    def aclUserTableContextMenuEvent(self, event):
+        ''' userTable 右键 '''
+        rows=[]
+        for idx in self.aclUserTable.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        
+        menu = QtGui.QMenu(self.aclUserTable)
+        
+        
+        ''' 添加 '''
+        addAct = QtGui.QAction(u"添加用户", self.aclUserTable,
+            shortcut="Ctrl+A", statusTip=u"添加一条用户授权信息",
+            triggered=self.addUserAction)
+        menu.addAction(addAct)
+            
+        menu.addSeparator()
+        ''' 删除 '''
+        delAct = QtGui.QAction(u"删除", self.aclUserTable,
+            shortcut="Ctrl+D", statusTip=u"删除选中的用户授权记录",
+            triggered=self.delUserAction)
+        menu.addAction(delAct)
+        
+        if len(rowSet) == 0:
+            delAct.setEnabled(False)
+        else:
+            delAct.setEnabled(True)
+            
+        menu.exec_(event.globalPos())
+
+    ''' aclUserTable 右键 begin'''
+    def addUserAction(self, event):
+        row = self.aclUserTable.rowCount()
+        self.aclUserTable.insertRow(row)
+        
+        useritem = QtGui.QTableWidgetItem('')
+        useritem.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable | QtCore.Qt.ItemIsSelectable)
+        useritem.setTextAlignment(QtCore.Qt.AlignCenter)
+        self.aclUserTable.setItem(row, 0, useritem)
+        
+        for idx in xrange(4):
+            item = QtGui.QTableWidgetItem('')
+            item.setFlags(QtCore.Qt.ItemIsUserCheckable |
+                          QtCore.Qt.ItemIsEnabled)
+            item.setCheckState(QtCore.Qt.Unchecked)
+            self.aclUserTable.setItem(row, idx+1, item)
     
+        self.aclUserTable.scrollToBottom()
+        self.aclUserTable.editItem(useritem)
+    
+    def delUserAction(self, event):
+        rows=[]
+        for idx in self.aclUserTable.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        
+        if len(rowSet)>0:
+            msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning,
+                   u"删除用户授权", 
+                   u'<p>您确定删除当前选中的userid么？</p>',
+                   QtGui.QMessageBox.NoButton, self)
+            msgBox.addButton(u"继续", QtGui.QMessageBox.AcceptRole)
+            msgBox.addButton(u"取消", QtGui.QMessageBox.RejectRole)
+            if msgBox.exec_() == QtGui.QMessageBox.AcceptRole:
+                for row in rowSet:
+                    self.aclUserTable.removeRow(row)
+        
+    ''' aclUserTable 右键 end'''
+
+    def updateAcl(self):
+        acl = {}
+        
+        '''处理 ACL_GROUP_ANONYMOUSE'''
+        anonymouseAclArray = []
+        if self.aclTable.item(0, 1).checkState() == QtCore.Qt.Checked :
+            anonymouseAclArray.append(ACL.ACL_READ)
+        if self.aclTable.item(0, 2).checkState() == QtCore.Qt.Checked :
+            anonymouseAclArray.append(ACL.ACL_WRITE)
+        if self.aclTable.item(0, 3).checkState() == QtCore.Qt.Checked :
+            anonymouseAclArray.append(ACL.ACL_READ_ACP)
+        if self.aclTable.item(0, 4).checkState() == QtCore.Qt.Checked :
+            anonymouseAclArray.append(ACL.ACL_WRITE_ACP)
+        
+        '''处理 ACL_GROUP_CANONICAL'''
+        canonicalAclArray = []
+        if self.aclTable.item(1, 1).checkState() == QtCore.Qt.Checked :
+            canonicalAclArray.append(ACL.ACL_READ)
+        if self.aclTable.item(1, 2).checkState() == QtCore.Qt.Checked :
+            canonicalAclArray.append(ACL.ACL_WRITE)
+        if self.aclTable.item(1, 3).checkState() == QtCore.Qt.Checked :
+            canonicalAclArray.append(ACL.ACL_READ_ACP)
+        if self.aclTable.item(1, 4).checkState() == QtCore.Qt.Checked :
+            canonicalAclArray.append(ACL.ACL_WRITE_ACP)
+        
+        if len(anonymouseAclArray) > 0:
+            acl[ACL.ACL_GROUP_ANONYMOUSE] = anonymouseAclArray
+        if len(canonicalAclArray) > 0:
+            acl[ACL.ACL_GROUP_CANONICAL] = canonicalAclArray
+            
+        ''' 处理用户acl '''  
+        userAclDict = {}  
+        aclArray = []
+        aclUserTableRowCount = self.aclUserTable.rowCount()
+        for row in xrange(aclUserTableRowCount):
+            aclArray = []
+            userId = u'%s'%self.aclUserTable.item(row, 0).text()
+            acl_read = (self.aclUserTable.item(row, 1).checkState() == QtCore.Qt.Checked)
+            acl_write = (self.aclUserTable.item(row, 2).checkState() == QtCore.Qt.Checked)
+            acl_read_acp = (self.aclUserTable.item(row, 3).checkState() == QtCore.Qt.Checked)
+            acl_write_acp = (self.aclUserTable.item(row, 4).checkState() == QtCore.Qt.Checked)
+        
+            if acl_read or acl_write or acl_read_acp or acl_write_acp :
+                if acl_read:
+                    aclArray.append(ACL.ACL_READ)
+                if acl_write:
+                    aclArray.append(ACL.ACL_WRITE)
+                if acl_read_acp:
+                    aclArray.append(ACL.ACL_READ_ACP)
+                if acl_write_acp:
+                    aclArray.append(ACL.ACL_WRITE_ACP)
+                
+                userAclDict[userId] = aclArray
+                
+        if len(aclArray) > 0:
+            for k,v in userAclDict.iteritems():
+                acl[k] = v
+        
+        '''============='''
+        for key in self.keys:
+            updateFileACLRunnable = UpdateFileACLRunnable(self.bucketName, '%s%s'%(self.prefix, key), acl)
+            QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLRunnable(PyQt_PyObject)'),self.openner.updateFileAclDidFinished)
+            QtCore.QObject.connect(updateFileACLRunnable.emitter,QtCore.SIGNAL('UpdateFileACLDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.openner.updateFileAclDidFailed)
+            self.openner.openner.startOperationRunnable(updateFileACLRunnable)
+            ''' add oper log'''
+            self.openner.openner.operationLogTable.updateLogDict({'operation':'update file acl', 
+                                                        'result':u'处理中',
+                                                        'thread':updateFileACLRunnable})
+        
+        self.accept()
+
+
+class GenUrlDialog(QtGui.QDialog):
+    
+    def generateURL(self):
+        iso8601_fmt = '%Y-%m-%d %H:%M:%S'
+        import datetime
+        d = datetime.datetime.strptime(u'%s'%self.datetimeEdit.text(), iso8601_fmt)
+        expire = d - datetime.datetime.now()
+        
+        ip = u'%s'%self.ipEdit.text()
+        if len(ip) < 7:
+            ip = None
+        
+        scs = None
+        bucketAsDomain = False
+        if self.bucketAsDomainCheckbox.checkState() and len(self.bucketAsDomainEdit.text()) > 0:
+            scs = SCSBucket(u'%s'%self.bucketAsDomainEdit.text())
+            bucketAsDomain = True
+        else:
+            scs = SCSBucket(self.bucketName)
+        url = scs.make_url_authed(key=u'%s%s'%(self.prefix,self.key), expire=expire, ip=ip, bucketAsDomain=bucketAsDomain);
+        self.resultEdit.setText(url)
+    
+    def bucketAsDomainCheckboxChanged(self, event):
+        if self.bucketAsDomainCheckbox.checkState():
+            self.bucketAsDomainEdit.setEnabled(True)
+        else:
+            self.bucketAsDomainEdit.setText('')
+            self.bucketAsDomainEdit.setEnabled(False)
+    
+    ''' 文件信息对话框 '''
+    def __init__(self, parent=None, bucketName=None, key=None, prefix=None):
+        super(GenUrlDialog, self).__init__(parent)
+        
+        self.openner = parent
+        
+        self.bucketName = bucketName
+        self.key = key
+        self.prefix = prefix
+        self.fileNameLabel = QtGui.QLabel(u"<b>%s</b>"%key)
+        
+        self.datetimeEdit = QtGui.QDateTimeEdit(QtCore.QDateTime.currentDateTime())
+        self.datetimeEdit.setDisplayFormat('yyyy-MM-dd hh:mm:ss')
+        self.datetimeEdit.setDateRange(QtCore.QDate(2000, 1, 1), QtCore.QDate(2050, 12, 30))
+        self.datetimeLabel = QtGui.QLabel(u"过期时间(%s - %s)："%(self.datetimeEdit.minimumDate().toString(QtCore.Qt.ISODate),
+                                                             self.datetimeEdit.maximumDate().toString(QtCore.Qt.ISODate)))
+        
+        self.ipLabel = QtGui.QLabel(u"IP地址限制：")
+        self.ipEdit = QtGui.QLineEdit()
+
+        self.bucketAsDomainCheckbox = QtGui.QCheckBox(u"自定义域名")
+        self.bucketAsDomainCheckbox.stateChanged.connect(self.bucketAsDomainCheckboxChanged)
+        self.bucketAsDomainCheckbox.setChecked(False)
+        self.bucketAsDomainEdit = QtGui.QLineEdit()
+        self.bucketAsDomainEdit.setEnabled(False)
+        
+        ''' url结果editor '''
+        self.resultEdit = QtGui.QTextEdit()
+        
+        ''' button '''
+        self.buttonBox = QtGui.QDialogButtonBox()
+        self.acceptBtn = QtGui.QPushButton(u"生成")
+        self.acceptBtn.setEnabled(True)
+        self.buttonBox.addButton(self.acceptBtn, QtGui.QDialogButtonBox.AcceptRole)
+        
+        self.cancelBtn = QtGui.QPushButton(u"关闭")
+        self.cancelBtn.setEnabled(True)
+        self.buttonBox.addButton(self.cancelBtn, QtGui.QDialogButtonBox.RejectRole)
+        
+        self.buttonBox.accepted.connect(self.generateURL)
+        self.buttonBox.rejected.connect(self.reject)
+
+        
+        mainLayout = QtGui.QGridLayout()
+        mainLayout.addWidget(self.fileNameLabel, 0, 0, 1, 2)
+        mainLayout.addWidget(self.datetimeLabel, 1, 0)
+        mainLayout.addWidget(self.datetimeEdit, 1, 1)
+        
+        mainLayout.addWidget(self.ipLabel, 2, 0)
+        mainLayout.addWidget(self.ipEdit, 2, 1)
+        
+        mainLayout.addWidget(self.bucketAsDomainCheckbox, 3, 0)
+        mainLayout.addWidget(self.bucketAsDomainEdit, 3, 1)
+        
+        mainLayout.addWidget(self.resultEdit, 4, 0, 1, 2)
+        
+        mainLayout.addWidget(self.buttonBox, 5, 0, 1, 2)
+        
+        self.setLayout(mainLayout)
+        self.setWindowTitle(key)
+        self.resize(400, 400)
+        self.connect(self, QtCore.SIGNAL("finished(int)"), lambda code:self.deleteLater())
+        
 
 class FileInfoDialog(QtGui.QDialog):
     ''' 文件信息对话框 '''
+    isRunning = False
+    
     def __init__(self, parent=None, bucketName=None, key=None, prefix=None):
         super(FileInfoDialog, self).__init__(parent)
         
@@ -996,9 +1373,16 @@ class FileInfoDialog(QtGui.QDialog):
         self.setLayout(mainLayout)
         self.setWindowTitle(key)
         self.resize(400, 400)
+        self.isRunning = True
+        self.connect(self, QtCore.SIGNAL("finished(int)"), self.finished)
         
         self.getFileInfo()
         
+        
+    def finished(self,code):    
+        self.isRunning = False
+        self.deleteLater()
+    
         
     def aclUserTableCellChanged (self, row, col):
         ''' cell 修改监听事件 '''
@@ -1085,14 +1469,15 @@ class FileInfoDialog(QtGui.QDialog):
     
     
     def setupFileInfoView(self, runnable, info):
-        self.openner.openner.operationLogTable.updateLogDict({'operation':'get file info', 
-                                                   'result':u'完成',
-                                                   'thread':runnable})
-        self.kindValueLabel.setText(info['mimetype'])
-        self.sizeValueLabel.setText(filesizeformat(info['size']))#"%d KB" % (int((info['size'] + 1023) / 1024)))
-        self.createDateValueLabel.setText(info['modify'].strftime('%Y-%m-%d %H:%M:%S'))
-        
-        self.getFileAcl()
+        if self.isRunning:
+            self.openner.openner.operationLogTable.updateLogDict({'operation':'get file info', 
+                                                       'result':u'完成',
+                                                       'thread':runnable})
+            self.kindValueLabel.setText(info['mimetype'])
+            self.sizeValueLabel.setText(filesizeformat(info['size']))#"%d KB" % (int((info['size'] + 1023) / 1024)))
+            self.createDateValueLabel.setText(info['modify'].strftime('%Y-%m-%d %H:%M:%S'))
+            
+            self.getFileAcl()
     
     def fileInfoDidFailed(self, runnable, errorMsg):
         self.openner.openner.operationLogTable.updateLogDict({'operation':'get file info', 
@@ -1453,7 +1838,6 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         
         mainLayout.addWidget(self.buttonBox, 1, 0, 1, 2)
         
-        
         self.uploadTable = QtGui.QTableWidget(0, 2, self)
         self.uploadTable.setHorizontalHeaderLabels((u"文件路径", u"文件大小"))
         self.uploadTable.horizontalHeader().setResizeMode(0, QtGui.QHeaderView.Stretch)
@@ -1527,6 +1911,8 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         self.setLayout(mainLayout)
         self.setWindowTitle(u'确认待上传文件')
         self.resize(400, 400)
+        
+        self.connect(self, QtCore.SIGNAL("finished(int)"), lambda code:self.deleteLater())
     
     def itemChangedAct(self, item):
         for i in xrange(self.uploadTable.rowCount()):
@@ -1554,7 +1940,6 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
                 else:
                     uploadFilePathArray.append(u'%s'%cell.userInfo['filePath'])
             
-#         print '======uploadFilePathArray========',uploadFilePathArray
         self.openner.uploadMultiObjectAction(uploadFilePathArray,self.basePath+'/')
         self.hide()
         
@@ -1795,14 +2180,27 @@ class FilesTable(QtGui.QTableWidget):
                                                              'result':u'完成',
                                                              'thread':thread})
         
-        
+
     def fileInfoAction(self,event):
         ''' 文件列表右键contextMenu-file info action '''
-        if len(self.selectedIndexes()) > 0:
+        rows=[]
+        for idx in self.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        
+        if len(rowSet) == 1:        #单选
             fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()#unicode(self.item(self.selectedIndexes()[0].row(), 0).text(),'utf-8','ignore')
-            
-            fileInfoDialog = FileInfoDialog(self, self.currentBucketName, fileName, self.currentPrefix)
-            fileInfoDialog.exec_()
+                
+            self.fileInfoDialog = FileInfoDialog(self, self.currentBucketName, fileName, self.currentPrefix)
+            self.fileInfoDialog.exec_()
+        elif len(rowSet) > 1:       #多选
+            fileNames = []
+            for row in rowSet:
+                fileNames.append(u'%s'%self.item(row, 0).text())
+            if len(fileNames) > 0:
+                self.multiFileInfoDialog = MultiFileInfoDialog(self, self.currentBucketName, fileNames, self.currentPrefix)
+                self.multiFileInfoDialog.exec_()
+        
 
     def uploadMultiObjectAction(self, filePathArray, basePath):
         ''' 批量上传文件 '''
@@ -1838,7 +2236,7 @@ class FilesTable(QtGui.QTableWidget):
                     prefix = ''
 #                 print '=2===not isdir(filePath)======',fName,prefix
                 
-                #TODO:分片上传未完成
+#                 #TODO:分片上传未完成
 #                 if os.stat(filePath).st_size > 50 * 1024 * 1024 :     #文件大于50M采用分片上传
 #                     ''' 分片上传 '''
 #                     fileMultipartUploadRunnable = FileMultipartUploadRunnable(self.currentBucketName, filePath, prefix, self)
@@ -2035,6 +2433,23 @@ class FilesTable(QtGui.QTableWidget):
         self.refreshTableList()
         
         
+    def generateUrlAction(self, event):
+        ''' 生成签名url '''
+        rows=[]
+        for idx in self.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        
+        if len(rowSet) == 1:        #单选
+            fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
+            
+            genUrlDialog = GenUrlDialog(self, self.currentBucketName, fileName, self.currentPrefix)
+            genUrlDialog.exec_()
+        else:
+            QtGui.QMessageBox.information(self,
+                u"生成url失败", 
+                u'<p>暂时不支持多文件</p>')
+        
     def contextMenuEvent(self, event):
         rows=[]
         for idx in self.selectedIndexes():
@@ -2060,6 +2475,14 @@ class FilesTable(QtGui.QTableWidget):
             triggered=self.fileInfoAction)
         menu.addAction(fileInfoAct)
         
+        ''' 生成url '''
+        genUrlAct = QtGui.QAction(u"下载地址", self,
+            shortcut="Ctrl+U", statusTip=u"生成文件下载地址",
+            triggered=self.generateUrlAction)
+        menu.addAction(genUrlAct)
+        
+        genUrlAct.setEnabled(False)
+        
         if len(rowSet) == 1:#单选
             if fileName.find('/') == len(fileName)-1 :
                 fileInfoAct.setEnabled(False) 
@@ -2067,7 +2490,8 @@ class FilesTable(QtGui.QTableWidget):
             else:
                 fileInfoAct.setEnabled(True) 
                 downloadFileAct.setEnabled(True)
-                
+                genUrlAct.setEnabled(True)
+            
             menu.addSeparator()
             ''' 删除 '''
             delAct = QtGui.QAction(u"删除文件", self,
@@ -2075,8 +2499,19 @@ class FilesTable(QtGui.QTableWidget):
                 triggered=self.delAction)
             menu.addAction(delAct)
         else:#多选
-            fileInfoAct.setEnabled(False) 
             downloadFileAct.setEnabled(False)
+            
+            hasFolder = False
+            for row in rowSet:
+                fileName = u'%s'%self.item(row, 0).text()
+                if fileName.find('/') == len(fileName)-1 :
+                    hasFolder = True
+                    break
+                
+            if hasFolder:
+                fileInfoAct.setEnabled(False)
+            else:
+                fileInfoAct.setEnabled(True)
             
             menu.addSeparator()
             ''' 删除 '''
@@ -2089,15 +2524,32 @@ class FilesTable(QtGui.QTableWidget):
             
 
     def enableToolBarButton(self):
-        if len(self.selectedItems()) > 0 and self.selectedIndexes()[0].row() != 0:
-            fileName = u'%s'%self.item(self.selectedIndexes()[0].row(), 0).text()
-            if fileName.find('/') == len(fileName)-1 :
-                self.openner.objectInfoAct.setEnabled(False) 
+        '''
+        self.itemSelectionChanged.connect(self.enableToolBarButton)
+        FilesTable选中事件。
+            1.没有选中时，文件信息按钮无效
+            2.当选中第一行时，文件信息按钮无效
+            3.如果被选中的行存在文件夹，文件信息按钮无效
+            4.其他情况，文件信息按钮有效
+        '''
+        rows=[]
+        for idx in self.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        
+        if len(rowSet) > 0:
+            if 0 not in rowSet:
+                for row in rowSet:
+                    fileName = u'%s'%self.item(row, 0).text()
+                    if fileName.find('/') == len(fileName)-1 :
+                        self.openner.objectInfoAct.setEnabled(False)
+                        return
+                self.openner.objectInfoAct.setEnabled(True)
             else:
-                self.openner.objectInfoAct.setEnabled(True) 
-            
+                self.openner.objectInfoAct.setEnabled(False)
         else:
             self.openner.objectInfoAct.setEnabled(False)
+        
 
     def filesTableCellActivatedAction(self, row, column):
         ''' 文件列表row双击事件 '''
@@ -2107,9 +2559,11 @@ class FilesTable(QtGui.QTableWidget):
                 self.currentPrefix = ''
                 ''' 显示bucket table '''
                 self.openner.central_widget.removeWidget(self)
+                self.openner.filesTable = None
                 self.openner.uploadAct.setEnabled(False)
                 self.openner.objectInfoAct.setEnabled(False)
                 self.openner.setWindowTitle('')
+                self.deleteLater()
                 
                 return
             else:

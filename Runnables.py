@@ -101,7 +101,7 @@ class FileMultipartUploadRunnable(BaseRunnable):
     
                 try:
                     part_result = _upload_part_by_fileWithCallback(self.bucketName, keyName, 
-                                                                   self.multipart, part, 
+                                                                   self.multipart.upload_id, self.multipart.parts_amount, part, 
                                                                    self._current_fileChunkWithCallback, None)
                     self.multipart.parts.append(part_result)
                     
@@ -614,9 +614,11 @@ class CheckNewVersionRunnable(QtCore.QRunnable):
                 }
             '''
             self.versionDict = json.loads(response.read())
+            response = None
+            self.emitter.emit(QtCore.SIGNAL("CheckNewVersion(PyQt_PyObject)"), self.versionDict)
         finally:
             self.mutex.unlock()
-        self.emitter.emit(QtCore.SIGNAL("CheckNewVersion(PyQt_PyObject)"), self.versionDict)
+            self.versionDict = None
 
 
         
