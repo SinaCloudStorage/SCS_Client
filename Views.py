@@ -696,6 +696,8 @@ class BucketInfoDialog(QtGui.QDialog):
         self.aclUserTable.verticalHeader().hide()
         self.aclUserTable.setShowGrid(False)
         
+        self.aclUserTable.contextMenuEvent = self.aclUserTableContextMenuEvent
+        
         mainLayout.addWidget(self.aclUserTable,16,0,1,2)
         
         ''' button '''
@@ -719,10 +721,94 @@ class BucketInfoDialog(QtGui.QDialog):
         self.connect(self, QtCore.SIGNAL("finished(int)"), self.finished)
         self.refreshViews()
     
+<<<<<<< HEAD
     def finished(self, code):
         self.isRunning = False
         self.deleteLater()    
     
+=======
+    
+    def aclUserTableCellChanged (self, row, col):
+        ''' cell 修改监听事件 '''
+        if col == 0:
+            userId = u'%s'%self.aclUserTable.item(row, col).text()
+            if len(userId) != 20 and len(userId) != 0:
+                QtGui.QMessageBox.information(self,
+                                              u"UserId长度不合法", 
+                                              u'<p>UserId长度必须是20位</p>')
+                item = self.aclUserTable.item(row, col)
+                self.aclUserTable.scrollToItem(item)
+                self.aclUserTable.setItemSelected(item,True)
+        
+    def aclUserTableContextMenuEvent(self, event):
+        ''' userTable 右键 '''
+        rows=[]
+        for idx in self.aclUserTable.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        
+        menu = QtGui.QMenu(self.aclUserTable)
+        
+        ''' 添加 '''
+        addAct = QtGui.QAction(u"添加用户", self.aclUserTable,
+            shortcut="Ctrl+A", statusTip=u"添加一条用户授权信息",
+            triggered=self.addUserAction)
+        menu.addAction(addAct)
+            
+        menu.addSeparator()
+        ''' 删除 '''
+        delAct = QtGui.QAction(u"删除", self.aclUserTable,
+            shortcut="Ctrl+D", statusTip=u"删除选中的用户授权记录",
+            triggered=self.delUserAction)
+        menu.addAction(delAct)
+        
+        if len(rowSet) == 0:
+            delAct.setEnabled(False)
+        else:
+            delAct.setEnabled(True)
+            
+        menu.exec_(event.globalPos())
+
+    ''' aclUserTable 右键 begin'''
+    def addUserAction(self, event):
+        row = self.aclUserTable.rowCount()
+        self.aclUserTable.insertRow(row)
+        
+        useritem = QtGui.QTableWidgetItem('')
+        useritem.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable | QtCore.Qt.ItemIsSelectable)
+        useritem.setTextAlignment(QtCore.Qt.AlignCenter)
+        self.aclUserTable.setItem(row, 0, useritem)
+        
+        for idx in xrange(4):
+            item = QtGui.QTableWidgetItem('')
+            item.setFlags(QtCore.Qt.ItemIsUserCheckable |
+                          QtCore.Qt.ItemIsEnabled)
+            item.setCheckState(QtCore.Qt.Unchecked)
+            self.aclUserTable.setItem(row, idx+1, item)
+    
+        self.aclUserTable.scrollToBottom()
+        self.aclUserTable.editItem(useritem)
+    
+    def delUserAction(self, event):
+        rows=[]
+        for idx in self.aclUserTable.selectedIndexes():
+            rows.append(idx.row()) 
+        rowSet = set(rows)
+        
+        if len(rowSet)>0:
+            msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning,
+                   u"删除用户授权", 
+                   u'<p>您确定删除当前选中的userid么？</p>',
+                   QtGui.QMessageBox.NoButton, self)
+            msgBox.addButton(u"继续", QtGui.QMessageBox.AcceptRole)
+            msgBox.addButton(u"取消", QtGui.QMessageBox.RejectRole)
+            if msgBox.exec_() == QtGui.QMessageBox.AcceptRole:
+                for row in rowSet:
+                    self.aclUserTable.removeRow(row)
+        
+    ''' aclUserTable 右键 end'''
+        
+>>>>>>> FETCH_HEAD
     def refreshViews(self):
         if self.isRunning:
             bucketInfoRunnable = BucketInfoRunnable(self.bucketName, self)
@@ -817,7 +903,7 @@ u'RelaxUpload': True,
                 self.aclUserTable.insertRow(row)
                 
                 item = QtGui.QTableWidgetItem(key)
-                item.setFlags(QtCore.Qt.ItemIsEnabled)
+                item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable |QtCore.Qt.ItemIsSelectable)
                 item.setTextAlignment(QtCore.Qt.AlignCenter)
                 self.aclUserTable.setItem(row, 0, item)
                 
@@ -841,6 +927,8 @@ u'RelaxUpload': True,
                     self.aclUserTable.item(row, 4).setCheckState(QtCore.Qt.Checked)
             
         self.acceptBtn.setEnabled(True)
+        
+        self.aclUserTable.cellChanged.connect(self.aclUserTableCellChanged)
         
         
     def updateAcl(self):
@@ -878,7 +966,8 @@ u'RelaxUpload': True,
         aclArray = []
         aclUserTableRowCount = self.aclUserTable.rowCount()
         for row in xrange(aclUserTableRowCount):
-            userId = u'%s'%self.aclUserTable.item(row, 0).text()#unicode(self.aclUserTable.item(row, 0).text(),'utf-8','ignore')
+            aclArray = []
+            userId = u'%s'%self.aclUserTable.item(row, 0).text()
             acl_read = (self.aclUserTable.item(row, 1).checkState() == QtCore.Qt.Checked)
             acl_write = (self.aclUserTable.item(row, 2).checkState() == QtCore.Qt.Checked)
             acl_read_acp = (self.aclUserTable.item(row, 3).checkState() == QtCore.Qt.Checked)
