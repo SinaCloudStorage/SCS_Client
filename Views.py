@@ -347,10 +347,11 @@ class OperationLogTable(QtGui.QTableWidget):
                 shortcut="Ctrl+D", statusTip=u"查看详细信息",
                 triggered=self.detailAction)
             menu.addAction(detailAct)
-            if operRunnable.state == RunnableState.WAITING or operRunnable.state == RunnableState.RUNNING :
-                detailAct.setEnabled(False)
-            else:
-                detailAct.setEnabled(True)
+            if hasattr(operRunnable,'state'):
+                if operRunnable.state == RunnableState.WAITING or operRunnable.state == RunnableState.RUNNING :
+                    detailAct.setEnabled(False)
+                else:
+                    detailAct.setEnabled(True)
             
             ''' 取消 '''
             cancelAct = QtGui.QAction(u"取消操作", self,
@@ -2447,6 +2448,10 @@ class FilesTable(QtGui.QTableWidget):
                 QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteMultiObjectDidFailed)
                 QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteMultiObjectForbidden)
                 self.openner.startOperationRunnable(deleteObjectRunnable)
+                
+                self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                           'result':u'处理中',
+                                                           'thread':deleteObjectRunnable})
         
     def deleteMultiObjectDidFinished(self, runnable):
         if runnable.key in self.toBeDeleteObjectsArray:
@@ -2499,17 +2504,19 @@ class FilesTable(QtGui.QTableWidget):
                 rows.append(idx.row()) 
             rowSet = set(rows)
             
-            for rowNum in rowSet:
-                fileName = u'%s'%self.item(rowNum, 0).text()
-                deleteObjectRunnable = DeleteObjectRunnable(self.currentBucketName,'%s%s'%(self.currentPrefix,fileName))
-                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable(PyQt_PyObject)'),self.deleteObjectDidFinished)
-                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectDidFailed)
-                QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectForbidden)
-                self.openner.startOperationRunnable(deleteObjectRunnable)
-                
-                self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
-                                                               'result':u'处理中',
-                                                               'thread':deleteObjectRunnable})
+            rowNum = rowSet.pop()
+            selectedFileName = u'%s'%self.item(rowNum, 0).text()
+#             if selectedFileName.endswith('/') is not True:#文件
+            deleteObjectRunnable = DeleteObjectRunnable(self.currentBucketName,'%s%s'%(self.currentPrefix,selectedFileName))
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectRunnable(PyQt_PyObject)'),self.deleteObjectDidFinished)
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectDidFailed)
+            QtCore.QObject.connect(deleteObjectRunnable.emitter,QtCore.SIGNAL('DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)'),self.deleteObjectForbidden)
+            self.openner.startOperationRunnable(deleteObjectRunnable)
+            
+            self.openner.operationLogTable.updateLogDict({'operation':'delete object', 
+                                                           'result':u'处理中',
+                                                           'thread':deleteObjectRunnable})
+
     
     def deleteObjectForbidden(self, runnable, errorMsg):
         self.openner.operationLogTable.updateLogDict({'operation':'delete object', 

@@ -74,7 +74,7 @@ class MainWindow(QtGui.QMainWindow):
         self.threadPool.setMaxThreadCount(4)
         
         self.commonOperationthreadPool = QtCore.QThreadPool(self)
-        self.commonOperationthreadPool.setMaxThreadCount(1)
+        self.commonOperationthreadPool.setMaxThreadCount(4)
         
         self.lastOpenPath = ''
         
@@ -99,7 +99,10 @@ class MainWindow(QtGui.QMainWindow):
                 self.threadPool.start(operationRunnable)
                 self.runnables.append(operationRunnable)
             else:
-                self.commonOperationthreadPool.start(operationRunnable)
+                if isinstance(operationRunnable, (ListBucketRunnable, ListDirRunnable, CreateBucketRunnable, CreateFolderRunnable)):
+                    self.commonOperationthreadPool.start(operationRunnable, 5)
+                else:
+                    self.commonOperationthreadPool.start(operationRunnable, 0)
         else:
             return False
         

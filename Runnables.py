@@ -357,23 +357,39 @@ class DeleteObjectRunnable(BaseRunnable):
             self.mutex.lock()
             self.state = RunnableState.RUNNING
             s = SCSBucket(self.bucketName)
-            if self.key.rfind('/') == len(self.key)-1 :
+#             if self.key.rfind('/') == len(self.key)-1 :
+#                 m = (("prefix", smart_str(self.key)),
+#                      ("delimiter", '/'),
+#                      ("max-keys", 5),
+#                      ("formatter","json"))
+#                 args = dict((str(k), str(v)) for (k, v) in m if v is not None)
+#                 response = s.send(s.request(key='', args=args))
+#                 files_generator = SCSListing.parse(response)
+#                 
+#                 if files_generator.contents_quantity > 0 or files_generator.common_prefixes_quantity > 0 :
+#                     for item in files_generator:
+#                         if cmp(item[0],self.key) != 0:
+#                             self.emitter.emit(QtCore.SIGNAL("DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)"), self, u'不能删除非空目录(前缀) ')
+#                             return
+            
+#             s = SCSBucket(self.bucketName)
+
+            if self.key.endswith('/') is not True:#文件
+                self.response = s.send(s.request(method="DELETE", key=self.key))
+            else:#目录
                 m = (("prefix", smart_str(self.key)),
-                     ("delimiter", '/'),
-                     ("max-keys", 5),
                      ("formatter","json"))
                 args = dict((str(k), str(v)) for (k, v) in m if v is not None)
                 response = s.send(s.request(key='', args=args))
                 files_generator = SCSListing.parse(response)
-                
-                if files_generator.contents_quantity > 0 or files_generator.common_prefixes_quantity > 0 :
-                    for item in files_generator:
-                        if cmp(item[0],self.key) != 0:
-                            self.emitter.emit(QtCore.SIGNAL("DeleteObjectForbidden(PyQt_PyObject,PyQt_PyObject)"), self, u'不能删除非空目录(前缀) ')
-                            return
-            
-#             s = SCSBucket(self.bucketName)
-            self.response = s.send(s.request(method="DELETE", key=self.key))
+                ''' 根据bucketName获取bucket下得所有文件 '''
+                #name, isPrefix, sha1, expiration_time, modify, owner, md5, content_type, size
+                for item in files_generator:
+                    fileNameStr = item[0]
+                    if not item[1]:
+                        self.response = s.send(s.request(method="DELETE", key=fileNameStr))
+
+
         except SCSError, e:
             self.state = RunnableState.DID_FAILED
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
