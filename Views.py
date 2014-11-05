@@ -2663,12 +2663,12 @@ class FilesTable(QtGui.QTableWidget):
                 self.currentPrefix = ''
                 ''' 显示bucket table '''
                 self.openner.central_widget.removeWidget(self)
-                self.openner.filesTable = None
+#                 self.openner.filesTable = None
                 self.openner.uploadAct.setEnabled(False)
                 self.openner.objectInfoAct.setEnabled(False)
                 self.openner.setWindowTitle('')
-                self.deleteLater()
-                self.close()
+#                 self.deleteLater()
+#                 self.close()
                 
                 return
             else:
