@@ -402,11 +402,11 @@ class OperationLogTable(QtGui.QTableWidget):
             operRunnable = operDict['thread'];
             if operRunnable.state == RunnableState.DID_CANCELED or operRunnable.state == RunnableState.DID_FAILED:
                 if isinstance(operRunnable, FileUploadRunnable):
-                    fileUploadRunnable = FileUploadRunnable(operRunnable.bucketName, operRunnable.filePath, operRunnable.prefix, operRunnable.parent)
+                    fileUploadRunnable = FileUploadRunnable(operRunnable.bucketName, operRunnable.filePath, operRunnable.prefix)
                     QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)'),operRunnable.parent.uploadFileUpdateProgress)
-                    QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidFinished)
-                    QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidFailed)
-                    QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadMultiFileDidCanceled)
+                    QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),operRunnable.parent.uploadFileDidFinished)
+                    QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadFileDidFailed)
+                    QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadFileDidCanceled)
                     operRunnable.parent.openner.startOperationRunnable(fileUploadRunnable)
                     self.openner.operationLogTable.updateLogDict({'operation':'upload file' if isinstance(operRunnable, FileUploadRunnable) else 'download file', 
                                                                      'result':u'处理中',
@@ -2042,6 +2042,8 @@ class UploadFilesConfirmDialog(QtGui.QDialog):
         self.checkAllState = not self.checkAllState
 
 class FilesTable(QtGui.QTableWidget):
+    
+    isRunning = False
     ''' 用于文件列表的table '''
     def __init__(self, bucketName, openner=None):
         super(FilesTable, self).__init__(0, 5)
@@ -2049,6 +2051,7 @@ class FilesTable(QtGui.QTableWidget):
         self.currentBucketName = ''
         self.currentPrefix = ''
         
+        self.isRunning = True
         self.setSortingEnabled(False)
         
         self.openner = openner
@@ -2065,6 +2068,11 @@ class FilesTable(QtGui.QTableWidget):
         self.refreshTableList()
         
         self.setAcceptDrops(True)
+        
+    def closeEvent(self, event):
+        self.isRunning = False
+        self.deleteLater()
+        super(FilesTable, self).closeEvent(event)
     
     def dragEnterEvent(self, event):
 #         self.setText("<drop content>")
@@ -2134,12 +2142,22 @@ class FilesTable(QtGui.QTableWidget):
     
     
     def uploadFileDidFinished(self, thread):
+        ''' 上传文件--完成 '''
         self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
                                                              'result':u'完成',
                                                              'thread':thread})
         self.refreshTableList()
         
+    def uploadFileDidCanceled(self, runnable, errorMsg):
+        ''' 上传文件--取消 '''
+        self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
+                                                             'result':u'取消',
+                                                             'thread':runnable})
+        ''' 刷新列表 '''
+        self.refreshTableList()
+            
     def uploadFileDidFailed(self, runnable, errorMsg):
+        ''' 上传文件--失败 '''
         self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
                                                              'result':u'失败',
                                                              'thread':runnable})
@@ -2335,11 +2353,11 @@ class FilesTable(QtGui.QTableWidget):
 #                                                                  'result':u'处理中',
 #                                                                  'thread':fileMultipartUploadRunnable})
 #                 else:
-                fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, prefix, self)
+                fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, prefix)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)'),self.uploadFileUpdateProgress)
-                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadMultiFileDidFinished)
-                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidFailed)
-                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),self.uploadMultiFileDidCanceled)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadFileDidFinished)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadFileDidFailed)
+                QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidCanceled(PyQt_PyObject,PyQt_PyObject)'),self.uploadFileDidCanceled)
                 self.openner.startOperationRunnable(fileUploadRunnable)
                 self.openner.operationLogTable.updateLogDict({'operation':'upload file', 
                                                                  'result':u'处理中',
@@ -2650,6 +2668,7 @@ class FilesTable(QtGui.QTableWidget):
                 self.openner.objectInfoAct.setEnabled(False)
                 self.openner.setWindowTitle('')
                 self.deleteLater()
+                self.close()
                 
                 return
             else:
@@ -2682,17 +2701,18 @@ class FilesTable(QtGui.QTableWidget):
     
     def refreshTableList(self):
         ''' 刷新当前列表 '''
-        self.clearContents()
-        self.setRowCount(0)
-        
-        listDirRunnable = ListDirRunnable(bucketName=self.currentBucketName, prefix=self.currentPrefix, delimiter='/')
-        QtCore.QObject.connect(listDirRunnable.emitter,QtCore.SIGNAL('ListDirRunnable(PyQt_PyObject)'),self.showFilesOfBucket)
-        QtCore.QObject.connect(listDirRunnable.emitter,QtCore.SIGNAL('ListDirDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.listDirDidFailed)
-        self.openner.startOperationRunnable(listDirRunnable)
-        
-        self.openner.operationLogTable.updateLogDict({'operation':'list dir', 
-                                                   'result':u'处理中',
-                                                   'thread':listDirRunnable})
+        if self.isRunning:
+            self.clearContents()
+            self.setRowCount(0)
+            
+            listDirRunnable = ListDirRunnable(bucketName=self.currentBucketName, prefix=self.currentPrefix, delimiter='/')
+            QtCore.QObject.connect(listDirRunnable.emitter,QtCore.SIGNAL('ListDirRunnable(PyQt_PyObject)'),self.showFilesOfBucket)
+            QtCore.QObject.connect(listDirRunnable.emitter,QtCore.SIGNAL('ListDirDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.listDirDidFailed)
+            self.openner.startOperationRunnable(listDirRunnable)
+            
+            self.openner.operationLogTable.updateLogDict({'operation':'list dir', 
+                                                       'result':u'处理中',
+                                                       'thread':listDirRunnable})
         
     def listDirDidFailed(self, runnable, errorMsg):
         self.openner.operationLogTable.updateLogDict({'operation':'list dir', 
