@@ -7,5 +7,6 @@
 	<file alias="upload.png">images/upload.png</file>
 	<file alias="folder_icon.png">images/folder.png</file>
 	<file alias="file_icon.png">images/notfound.png</file>
+	<file alias="icon.png">images/icon.png</file>
 </qresource>
 </RCC>

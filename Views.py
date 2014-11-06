@@ -2870,7 +2870,7 @@ class AboutDialog(QtGui.QDialog):
         self.openner = parent
         
         self.aboutLabel = QtGui.QLabel("<div align='center' valign='top'>\
-        <img src='resource/images/icon.png'/>\
+        <img src=':/icon.png'/>\
         <br/><b>SCS client</b>\
         <br><span>%s</span>\
         </div><br><div style=margin-left:30px>%s</div>\
@@ -2880,7 +2880,7 @@ class AboutDialog(QtGui.QDialog):
         mainLayout.addWidget(self.aboutLabel, 0, 0)
         
         self.setLayout(mainLayout)
-        self.setWindowTitle('关于')
+        self.setWindowTitle('')
         self.resize(300, 260)
         self.setMaximumSize(300, 260)
         self.setMinimumSize(300, 260)
