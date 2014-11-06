@@ -2860,3 +2860,29 @@ class FileSizeCellItem(FileTableCellItem) :
         
         return bytesFromFilesizeFormat(str1) < bytesFromFilesizeFormat(str2)
         
+        
+        
+class AboutDialog(QtGui.QDialog):
+    ''' 关于对话框 '''
+    def __init__(self, parent=None, version='0.0.1', detail=''):
+        super(AboutDialog, self).__init__(parent)
+        
+        self.openner = parent
+        
+        self.aboutLabel = QtGui.QLabel("<div align='center' valign='top'>\
+        <img src='resource/images/icon.png'/>\
+        <br/><b>SCS client</b>\
+        <br><span>%s</span>\
+        </div><br><div style=margin-left:30px>%s</div>\
+        "%(version, detail))
+        
+        mainLayout = QtGui.QGridLayout()
+        mainLayout.addWidget(self.aboutLabel, 0, 0)
+        
+        self.setLayout(mainLayout)
+        self.setWindowTitle('关于')
+        self.resize(300, 260)
+        self.setMaximumSize(300, 260)
+        self.setMinimumSize(300, 260)
+        self.connect(self, QtCore.SIGNAL("finished(int)"), lambda code:self.deleteLater())
+        

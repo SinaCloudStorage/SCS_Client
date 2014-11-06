@@ -13,7 +13,7 @@ sip.setapi('QVariant', 2)
 import os
 from PyQt4 import QtCore, QtGui
 
-from Views import FileInfoDialog, LoginWindow, OperationLogTable, FilesTable, BucketTable
+from Views import FileInfoDialog, LoginWindow, OperationLogTable, FilesTable, BucketTable, AboutDialog
 
 import sinastorage
 
@@ -36,8 +36,15 @@ USER_ACCESS_SECRET   = ''
 
 USE_SECURE_CONNECTION = False
 
-VERSION_CODE = 3
-VERSION_NAME = u'v0.0.3'
+VERSION_CODE = 4
+VERSION_NAME = u'v0.0.4'
+VERSION_DETAIL = u'<b>新增功能：</b><ol>\
+<li>支持文件夹批量删除</li>\
+<li>URL签名</li>\
+<li>内存优化</li>\
+<li>修改部分bug</li>\
+</ol>'
+
 
 def gcHistogram(): 
         """Returns per-class counts of existing objects.""" 
@@ -185,8 +192,12 @@ class MainWindow(QtGui.QMainWindow):
             self.operationLogTable.show()
 
     def about(self):
-        QtGui.QMessageBox.about(self, "SCS client",
-                "<b>SCS client</b> .")
+#         about_box = QtGui.QMessageBox(self)
+#         about_box.about(self, "SCS client",
+#                 "<div align='center'><img src='resource/images/icon.png'/><br/><b>SCS client</b><br><b>%s</b></div>"%(VERSION_NAME))
+        
+        about_dialog = AboutDialog(self, VERSION_NAME, VERSION_DETAIL)
+        about_dialog.exec_()
 
     def init(self):
         self.central_widget = QtGui.QStackedWidget()
