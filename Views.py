@@ -2881,8 +2881,8 @@ class AboutDialog(QtGui.QDialog):
         
         self.setLayout(mainLayout)
         self.setWindowTitle('')
-        self.resize(300, 260)
-        self.setMaximumSize(300, 260)
-        self.setMinimumSize(300, 260)
+        self.resize(320, 290)
+        self.setMaximumSize(640, 580)
+        self.setMinimumSize(320, 290)
         self.connect(self, QtCore.SIGNAL("finished(int)"), lambda code:self.deleteLater())
         
