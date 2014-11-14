@@ -403,7 +403,7 @@ class OperationLogTable(QtGui.QTableWidget):
             operRunnable = operDict['thread'];
             if operRunnable.state == RunnableState.DID_CANCELED or operRunnable.state == RunnableState.DID_FAILED:
                 if isinstance(operRunnable, FileUploadRunnable):
-                    fileUploadRunnable = FileUploadRunnable(operRunnable.bucketName, operRunnable.filePath, operRunnable.prefix)
+                    fileUploadRunnable = FileUploadRunnable(operRunnable.bucketName, operRunnable.filePath, operRunnable.prefix, operRunnable.parent)
                     QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)'),operRunnable.parent.uploadFileUpdateProgress)
                     QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),operRunnable.parent.uploadFileDidFinished)
                     QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),operRunnable.parent.uploadFileDidFailed)
@@ -2354,7 +2354,7 @@ class FilesTable(QtGui.QTableWidget):
 #                                                                  'result':u'处理中',
 #                                                                  'thread':fileMultipartUploadRunnable})
 #                 else:
-                fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, prefix)
+                fileUploadRunnable = FileUploadRunnable(self.currentBucketName, filePath, prefix, self)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)'),self.uploadFileUpdateProgress)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFinished(PyQt_PyObject)'),self.uploadFileDidFinished)
                 QtCore.QObject.connect(fileUploadRunnable.emitter,QtCore.SIGNAL('fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)'),self.uploadFileDidFailed)

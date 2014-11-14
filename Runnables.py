@@ -170,10 +170,12 @@ class FileUploadRunnable(BaseRunnable):
         self.source_size = os.stat(self.filePath).st_size
         
         
-    def uploadCallBack(self, total, uploaded):
-        self.total = total
-        self.received = self.received + uploaded
-        self.emitter.emit(QtCore.SIGNAL("fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)"), self, self.total, self.received)
+    def uploadCallBack(self, size, progress):
+        #手动停止
+        if self.state == RunnableState.DID_CANCELED:
+            raise ManualCancel
+        
+        self.emitter.emit(QtCore.SIGNAL("fileUploadProgress(PyQt_PyObject, PyQt_PyObject, PyQt_PyObject)"), self, size, progress)
     
     def upload(self):
         ''' 普通上传 '''
@@ -182,10 +184,11 @@ class FileUploadRunnable(BaseRunnable):
             self.state = RunnableState.RUNNING
             
             s = SCSBucket(self.bucketName)
-            self.fileWithCallback = FileWithCallback(self.filePath, 'rb', self.uploadCallBack)
-            scsResponse = s.putFileByHeaders('%s%s'%(self.prefix,os.path.basename(self.filePath)), self.fileWithCallback)
-            self.response =  scsResponse
+            with FileWithCallback(self.filePath, 'rb', self.uploadCallBack) as fileWithCallback:
+                scsResponse = s.putFileByHeaders('%s%s'%(self.prefix,os.path.basename(self.filePath)), fileWithCallback)
+                self.response =  scsResponse
         except SCSError, e:
+            print e
             self.response = SCSResponse(e.urllib2Request, e.urllib2Response)
             if isinstance(e, ManualCancel):     #手动取消
                 self.state = RunnableState.DID_CANCELED
@@ -197,7 +200,6 @@ class FileUploadRunnable(BaseRunnable):
                 self.emitter.emit(QtCore.SIGNAL("fileUploadDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, e.msg)
             return
         finally:
-            self.fileWithCallback.close()
             self.mutex.unlock()
             
         self.state = RunnableState.DID_FINISHED
@@ -209,10 +211,6 @@ class FileUploadRunnable(BaseRunnable):
         
     def cancel(self):
         self.state = RunnableState.DID_CANCELED
-        if self.useMultipartUpload:
-            pass
-        else:
-            self.fileWithCallback.cancelRead = True
         
 class FileInfoRunnable(BaseRunnable):
     ''' 文件信息 '''
