@@ -444,14 +444,18 @@ class DownloadObjectRunnable(BaseRunnable):
                 if "content-length" in responseHeaders:
                     self.total = long(responseHeaders["content-length"])
                 else:
-                    raise ValueError("Content-Length not returned!!")
+                    self.total = 0
             elif statusCode == 206:
                 ''' 用于断点续传时获取文件总大小 '''
                 if "content-range" in responseHeaders:
                     content_range = responseHeaders["content-range"]
                     self.total = long(content_range[content_range.rfind('/')+1:])
                 else:
-                    raise ValueError("Content-Length not returned!!")
+#                     raise ValueError("Content-Length not returned!!")
+                    self.state = RunnableState.DID_FAILED
+                    self.response._responseBody = u'Content-Length not returned!!'
+                    self.emitter.emit(QtCore.SIGNAL("DownloadObjectDidFailed(PyQt_PyObject,PyQt_PyObject)"), self, self.response._responseBody)
+                    return
             
             lastTimestamp = time.time()
             CHUNK = 16 * 1024
